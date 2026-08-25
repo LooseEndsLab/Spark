@@ -26,15 +26,31 @@ final class SQLiteMessageStore: MessageStore {
             FROM chat_message_join cmj
             JOIN message m ON m.ROWID = cmj.message_id
             WHERE COALESCE(m.associated_message_type, 0) = 0
+        ), run_boundaries AS (
+            SELECT
+                *,
+                CASE WHEN LAG(is_from_me) OVER (
+                    PARTITION BY chat_id
+                    ORDER BY date, message_id
+                ) IS is_from_me THEN 0 ELSE 1 END AS starts_run
+            FROM non_reaction_messages
+        ), run_messages AS (
+            SELECT
+                *,
+                SUM(starts_run) OVER (
+                    PARTITION BY chat_id
+                    ORDER BY date, message_id
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS run_id
+            FROM run_boundaries
         ), latest_message_per_chat AS (
             SELECT
-                chat_id,
-                message_id,
+                *,
                 ROW_NUMBER() OVER (
                     PARTITION BY chat_id
                     ORDER BY date DESC, message_id DESC
                 ) AS position
-            FROM non_reaction_messages
+            FROM run_messages
         )
         SELECT c.ROWID, c.chat_identifier, c.display_name, m.message_id, m.date, m.is_from_me,
                trailing.text, trailing.attributedBody,
@@ -54,17 +70,9 @@ final class SQLiteMessageStore: MessageStore {
                )
         FROM latest_message_per_chat latest
         JOIN chat c ON c.ROWID = latest.chat_id
-        JOIN non_reaction_messages m ON m.message_id = latest.message_id
-        LEFT JOIN non_reaction_messages trailing ON trailing.chat_id = m.chat_id
-            AND trailing.is_from_me = m.is_from_me
-            AND NOT EXISTS (
-                SELECT 1
-                FROM non_reaction_messages intervening
-                WHERE intervening.chat_id = m.chat_id
-                  AND intervening.is_from_me != m.is_from_me
-                  AND (intervening.date > trailing.date OR (intervening.date = trailing.date AND intervening.message_id > trailing.message_id))
-                  AND (intervening.date < m.date OR (intervening.date = m.date AND intervening.message_id < m.message_id))
-            )
+        JOIN run_messages m ON m.message_id = latest.message_id
+        JOIN run_messages trailing ON trailing.chat_id = m.chat_id
+            AND trailing.run_id = m.run_id
         WHERE latest.position = 1
         ORDER BY c.ROWID, m.date, m.message_id, trailing.date, trailing.message_id
         """
