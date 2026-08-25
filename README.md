@@ -2,6 +2,10 @@
 
 A private, local macOS menu-bar app for finding one-to-one Messages chats that may need a follow-up.
 
+<p align="center">
+  <img src="Spark/Spark/Assets.xcassets/AppIcon.appiconset/icon_512x512.png" width="160" alt="Spark app icon">
+</p>
+
 ## What it does
 
 - **Follow Up:** chats where your latest non-reaction message may need a follow-up.

@@ -1,0 +1,32 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="background" x1="130" y1="105" x2="900" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5A2A1B"/>
+      <stop offset="1" stop-color="#25120E"/>
+    </linearGradient>
+    <linearGradient id="backCard" x1="430" y1="286" x2="777" y2="773" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DD7047"/>
+      <stop offset="1" stop-color="#9F3822"/>
+    </linearGradient>
+    <linearGradient id="frontCard" x1="232" y1="213" x2="666" y2="760" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9E9"/>
+      <stop offset="1" stop-color="#EEDCBF"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="625" y1="600" x2="745" y2="742" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3A0"/>
+      <stop offset=".46" stop-color="#F8B72E"/>
+      <stop offset="1" stop-color="#DE6A21"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#background)"/>
+  <g transform="translate(48 64)">
+  <rect x="393" y="276" width="386" height="441" rx="78" transform="rotate(6 393 276)" fill="url(#backCard)"/>
+  <path d="M240 151H649C694 151 731 188 731 233V531C731 576 694 613 649 613H467L315 732C283 757 234 734 234 693V623C195 611 166 577 166 537V248C166 194 202 151 240 151Z" fill="url(#frontCard)"/>
+  <path d="M240 151H649C694 151 731 188 731 233V531C731 576 694 613 649 613H467L315 732C283 757 234 734 234 693V623C195 611 166 577 166 537V248C166 194 202 151 240 151Z" stroke="#FFFDF6" stroke-width="16" stroke-linejoin="round"/>
+  <path d="M306 316H605" stroke="#B88667" stroke-width="38" stroke-linecap="round"/>
+  <path d="M306 415H555" stroke="#B88667" stroke-width="38" stroke-linecap="round"/>
+  <path d="M306 514H477" stroke="#B88667" stroke-width="38" stroke-linecap="round"/>
+  <path d="M658 607C670 574 679 566 712 554C679 542 670 534 658 501C646 534 637 542 604 554C637 566 646 574 658 607Z" fill="url(#spark)"/>
+  <circle cx="738" cy="530" r="12" fill="#F7B62D"/>
+  </g>
+</svg>
