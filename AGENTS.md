@@ -20,6 +20,13 @@ Spark is a local-only macOS menu-bar app. It identifies one-to-one Messages conv
 - The Ghosting tab is the inverse view: its latest non-reaction message is incoming and older than the threshold.
 - `Dismiss` hides the current outgoing message; `Ignore Conversation` hides the entire chat until it is unignored.
 
+## Message scanning implementation notes
+
+- Classify the complete trailing non-reaction run from the latest message's sender, but fetch bodies only after metadata filters narrow the candidate conversations. Never expand or decode message bodies for every chat.
+- Keep the metadata head scan fast on real `chat.db`; avoid correlated per-message subqueries or joins that expand every trailing run globally. A blank initial list is not a successful empty scan—show loading or an error until refresh completes.
+- Treat any SQLite `sqlite3_step` result other than `SQLITE_ROW` or `SQLITE_DONE` as a query failure so a Full Disk Access problem is visible.
+- Live diagnosis may use aggregate counts only; never output message text, identifiers, contact data, or message metadata.
+
 ## Project constraints
 
 - Preserve the app bundle identifier and signing settings unless the user explicitly asks to change them.

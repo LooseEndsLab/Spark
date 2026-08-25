@@ -95,6 +95,12 @@ struct MenuBarView: View {
     @ViewBuilder private var content: some View {
         if let error = model.errorMessage {
             ScrollView { PermissionView(error: error) }
+        } else if model.isLoading {
+            VStack(spacing: 8) {
+                ProgressView()
+                Text("Checking conversations…").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if conversations.isEmpty {
             VStack(spacing: 6) {
                 Image(systemName: "checkmark.circle").font(.title2).foregroundStyle(.secondary)

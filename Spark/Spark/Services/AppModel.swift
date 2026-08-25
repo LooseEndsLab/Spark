@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 @MainActor final class AppModel: ObservableObject {
-    @Published private(set) var followUps: [FollowUp] = []; @Published private(set) var ghostedConversations: [FollowUp] = []; @Published private(set) var errorMessage: String?
+    @Published private(set) var followUps: [FollowUp] = []; @Published private(set) var ghostedConversations: [FollowUp] = []; @Published private(set) var errorMessage: String?; @Published private(set) var isLoading = true
     @Published var thresholdDays: Int { didSet { if maximumConversationAgeDays < thresholdDays { maximumConversationAgeDays = thresholdDays }; defaults.set(max(1, thresholdDays), forKey: "thresholdDays"); refresh() } }
     @Published var maximumConversationAgeDays: Int { didSet { if maximumConversationAgeDays < thresholdDays { maximumConversationAgeDays = thresholdDays; return }; defaults.set(max(1, maximumConversationAgeDays), forKey: "maximumConversationAgeDays"); refresh() } }
     @Published var notificationsEnabled: Bool { didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled"); if notificationsEnabled { Task { _ = await notifier.requestAuthorization(); await refreshNotifications() } } } }
@@ -15,7 +15,7 @@ import Combine
     private var refreshGeneration = 0
     @Published private(set) var contactNames: [String: String] = [:]
     init(store: MessageStore = SQLiteMessageStore(), notifier: NotificationManager = NotificationManager(), defaults: UserDefaults = .standard) {
-        let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 7)
+        let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 1)
         let initialMaximumConversationAgeDays = max(initialThresholdDays, defaults.object(forKey: "maximumConversationAgeDays") as? Int ?? 90)
         self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContacts = defaults.object(forKey: "onlyContacts") as? Bool ?? true; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
         ignoredChatIDs = Set(defaults.array(forKey: "ignoredChatIDs") as? [Int64] ?? []); dismissedMessageIDs = Set(defaults.array(forKey: "dismissedMessageIDs") as? [Int64] ?? []); notifiedMessageIDs = Set(defaults.array(forKey: "notifiedMessageIDs") as? [Int64] ?? []); refresh()
@@ -31,6 +31,7 @@ import Combine
         let ignoreGroupChats = ignoreGroupChats
         let treatReactionsAsReplies = treatReactionsAsReplies
         let onlyContacts = onlyContacts
+        isLoading = true
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result {
@@ -48,11 +49,13 @@ import Combine
                     followUps = onlyContacts ? statuses.waitingOnThem.filter { contactNames[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnThem
                     ghostedConversations = onlyContacts ? statuses.waitingOnYou.filter { contactNames[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnYou
                     errorMessage = nil
+                    isLoading = false
                     await refreshNotifications()
                 case .failure(let error):
                     followUps = []
                     ghostedConversations = []
                     errorMessage = error.localizedDescription
+                    isLoading = false
                 }
             }
         }

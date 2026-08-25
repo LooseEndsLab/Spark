@@ -9,7 +9,7 @@ A private, local macOS menu-bar app for finding one-to-one Messages chats that m
 - **Suggested:** prioritizes questions and requests; **All** includes every eligible chat.
 - Dismiss a message or ignore a conversation to keep the queue tidy.
 
-Set a minimum follow-up age and a maximum age for stale conversations in Settings. Group chats and reactions are excluded from the latest-message calculation.
+Set a minimum follow-up age (one day by default) and a maximum age for stale conversations in Settings. Group chats and reactions are excluded from the latest-message calculation.
 
 ## Get started
 
@@ -19,7 +19,7 @@ Set a minimum follow-up age and a maximum age for stale conversations in Setting
 
 ## Privacy
 
-Spark reads Messages locally and in read-only mode. It has no backend, networking, telemetry, or analytics. Latest-message text is used only transiently for optional local ranking and is never stored or sent.
+Spark reads Messages locally and in read-only mode. It has no backend, networking, telemetry, or analytics. After metadata eligibility checks, text from the final uninterrupted same-sender message run is used only transiently for optional local ranking and is never stored or sent.
 
 [Read the privacy policy.](PRIVACY.md)
 

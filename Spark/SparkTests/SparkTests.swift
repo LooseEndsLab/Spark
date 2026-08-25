@@ -13,7 +13,7 @@ import SQLite3
 struct SparkTests {
 
     private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
-    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: false, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
+    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, isGroup: Bool = false, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: isGroup, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
     private func results(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findFollowUps(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     private func ghostedResults(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findGhostedConversations(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     @Test func outgoingOlderThanThresholdIsFollowUp() throws { #expect(try results([message(daysAgo: 7)]).count == 1) }
@@ -81,27 +81,6 @@ struct SparkTests {
         #expect(messages[0].messageID == 2)
     }
 
-    @Test func trailingMessagesAreAllUsedForLikelihoodInSQLiteStore() throws {
-        let messages = try latestMessagesFromTestDatabase([
-            (date: 10, isFromMe: true, associatedMessageType: 0, text: "Can you send the deck?"),
-            (date: 20, isFromMe: true, associatedMessageType: 0, text: "Thanks!"),
-        ])
-
-        #expect(messages.count == 1)
-        #expect(messages[0].likelihood == .likely(reason: "asked a question"))
-    }
-
-    @Test func messagesBeforeAnIncomingReplyAreNotUsedForLikelihoodInSQLiteStore() throws {
-        let messages = try latestMessagesFromTestDatabase([
-            (date: 10, isFromMe: true, associatedMessageType: 0, text: "Can you send the deck?"),
-            (date: 20, isFromMe: false, associatedMessageType: 0, text: "Sure"),
-            (date: 30, isFromMe: true, associatedMessageType: 0, text: "Thanks!"),
-        ])
-
-        #expect(messages.count == 1)
-        #expect(messages[0].likelihood == .review)
-    }
-
     @Test func latestIncomingIsNotWaitingOnThemInSQLiteStore() throws {
         let messages = try latestMessagesFromTestDatabase([
             (date: 10, isFromMe: true),
@@ -167,8 +146,44 @@ struct SparkTests {
         #expect(FollowUpLikelihood.classify(messageText: nil) == .review)
     }
 
-    @Test func anyMessageInTheLatestRunCanBeLikely() {
-        #expect(FollowUpLikelihood.classify(messageTexts: ["Can you send the deck?", "Thanks!"]).isLikely)
+    @Test func earlierQuestionInFinalSameSenderRunIsLikely() throws {
+        let newest = message(daysAgo: 20, messageID: 2, text: "Sounds good")
+        let store = RunSpyStore(messages: [newest], runs: [2: ["Can you send the deck?", "Sounds good"]])
+        let followUps = try FollowUpChecker(store: store).findFollowUps(thresholdDays: 7, ignoredChatIDs: [], dismissedMessageIDs: [], ignoreGroupChats: true, now: now)
+        #expect(followUps.first?.likelihood.isLikely == true)
+        #expect(store.requestedMessageIDs == [2])
+    }
+
+    @Test func incomingMessageSplitsTrailingRun() throws {
+        let newest = message(daysAgo: 20, messageID: 3)
+        let store = RunSpyStore(messages: [newest], runs: [3: ["Sounds good"]])
+        let followUps = try FollowUpChecker(store: store).findFollowUps(thresholdDays: 7, ignoredChatIDs: [], dismissedMessageIDs: [], ignoreGroupChats: true, now: now)
+        #expect(followUps.first?.likelihood == .review)
+    }
+
+    @Test func ineligibleCandidatesNeverReadBodies() throws {
+        let eligible = message(daysAgo: 20, chatID: 1, messageID: 1)
+        let recent = message(daysAgo: 1, chatID: 2, messageID: 2)
+        let ignored = message(daysAgo: 20, chatID: 3, messageID: 3)
+        let dismissed = message(daysAgo: 20, chatID: 4, messageID: 4)
+        let reacted = message(daysAgo: 20, chatID: 5, messageID: 5, hasReactionResponse: true)
+        let tooOld = message(daysAgo: 100, chatID: 6, messageID: 6)
+        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true)
+        let store = RunSpyStore(messages: [eligible, recent, ignored, dismissed, reacted, tooOld, group], runs: [1: ["Can you help?"], 2: ["Can you help?"], 3: ["Can you help?"], 4: ["Can you help?"], 5: ["Can you help?"], 6: ["Can you help?"], 7: ["Can you help?"]])
+        _ = try FollowUpChecker(store: store).findFollowUps(thresholdDays: 7, maximumAgeDays: 90, ignoredChatIDs: [3], dismissedMessageIDs: [4], ignoreGroupChats: true, now: now)
+        #expect(store.requestedMessageIDs == [1])
+    }
+
+    @Test func SQLiteTrailingRunUsesEarlierQuestionButStopsAtIncomingMessage() throws {
+        #expect(try trailingRunLikelihoodFromTestDatabase([
+            (10, true, "Can you send the deck?"),
+            (20, true, "Sounds good"),
+        ]).isLikely)
+        #expect(try trailingRunLikelihoodFromTestDatabase([
+            (10, true, "Can you send the deck?"),
+            (20, false, "I will reply later"),
+            (30, true, "Sounds good"),
+        ]) == .review)
     }
 
     @Test func likelihoodLabelCanNameTheSender() {
@@ -213,17 +228,30 @@ struct SparkTests {
     }
 
 }
-private struct StubStore: MessageStore { let messages: [ConversationMessage]; init(_ messages: [ConversationMessage]) { self.messages = messages }; func latestConversationMessages() throws -> [ConversationMessage] { messages } }
+private struct StubStore: MessageStore {
+    let messages: [ConversationMessage]
+    init(_ messages: [ConversationMessage]) { self.messages = messages }
+    func latestConversationMessages() throws -> [ConversationMessage] { messages }
+    func likelihoodForTrailingRun(in conversation: ConversationMessage) throws -> FollowUpLikelihood { conversation.likelihood }
+}
+
+private final class RunSpyStore: MessageStore {
+    let messages: [ConversationMessage]
+    let runs: [Int64: [String?]]
+    private(set) var requestedMessageIDs: [Int64] = []
+    init(messages: [ConversationMessage], runs: [Int64: [String?]]) { self.messages = messages; self.runs = runs }
+    func latestConversationMessages() throws -> [ConversationMessage] { messages }
+    func likelihoodForTrailingRun(in conversation: ConversationMessage) throws -> FollowUpLikelihood {
+        requestedMessageIDs.append(conversation.messageID)
+        return runs[conversation.messageID, default: []].map(FollowUpLikelihood.classify(messageText:)).first(where: \.isLikely) ?? .review
+    }
+}
 
 private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool)]) throws -> [ConversationMessage] {
     try latestMessagesFromTestDatabase(messages.map { (date: $0.date, isFromMe: $0.isFromMe, associatedMessageType: 0) })
 }
 
 private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64)]) throws -> [ConversationMessage] {
-    try latestMessagesFromTestDatabase(messages.map { (date: $0.date, isFromMe: $0.isFromMe, associatedMessageType: $0.associatedMessageType, text: nil) })
-}
-
-private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64, text: String?)]) throws -> [ConversationMessage] {
     let databaseURL = FileManager.default.temporaryDirectory.appending(path: "SparkTests-\(UUID().uuidString).sqlite")
     defer { try? FileManager.default.removeItem(at: databaseURL) }
 
@@ -239,12 +267,32 @@ private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe:
     try execute("CREATE TABLE chat_handle_join (chat_id INTEGER NOT NULL, handle_id INTEGER NOT NULL)", on: database)
     try execute("INSERT INTO chat (chat_identifier, display_name) VALUES ('test', 'Test')", on: database)
     for (index, message) in messages.enumerated() {
-        let text = message.text.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" } ?? "NULL"
-        try execute("INSERT INTO message (date, is_from_me, associated_message_type, text) VALUES (\(message.date), \(message.isFromMe ? 1 : 0), \(message.associatedMessageType), \(text))", on: database)
+        try execute("INSERT INTO message (date, is_from_me, associated_message_type) VALUES (\(message.date), \(message.isFromMe ? 1 : 0), \(message.associatedMessageType))", on: database)
         try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(index + 1))", on: database)
     }
 
     return try SQLiteMessageStore(databaseURL: databaseURL).latestConversationMessages()
+}
+
+private func trailingRunLikelihoodFromTestDatabase(_ messages: [(Int64, Bool, String)]) throws -> FollowUpLikelihood {
+    let databaseURL = FileManager.default.temporaryDirectory.appending(path: "SparkTests-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: databaseURL) }
+    var database: OpaquePointer?
+    guard sqlite3_open(databaseURL.path(percentEncoded: false), &database) == SQLITE_OK, let database else { throw TestDatabaseError.couldNotOpen }
+    defer { sqlite3_close(database) }
+    try execute("CREATE TABLE chat (chat_identifier TEXT, display_name TEXT)", on: database)
+    try execute("CREATE TABLE message (date INTEGER NOT NULL, is_from_me INTEGER NOT NULL, associated_message_type INTEGER NOT NULL DEFAULT 0, text TEXT, attributedBody BLOB)", on: database)
+    try execute("CREATE TABLE chat_message_join (chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL)", on: database)
+    try execute("CREATE TABLE chat_handle_join (chat_id INTEGER NOT NULL, handle_id INTEGER NOT NULL)", on: database)
+    try execute("INSERT INTO chat (chat_identifier, display_name) VALUES ('test', 'Test')", on: database)
+    for (index, message) in messages.enumerated() {
+        let escapedText = message.2.replacingOccurrences(of: "'", with: "''")
+        try execute("INSERT INTO message (date, is_from_me, text) VALUES (\(message.0), \(message.1 ? 1 : 0), '\(escapedText)')", on: database)
+        try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(index + 1))", on: database)
+    }
+    let store = SQLiteMessageStore(databaseURL: databaseURL)
+    guard let latest = try store.latestConversationMessages().first else { throw TestDatabaseError.queryFailed }
+    return try store.likelihoodForTrailingRun(in: latest)
 }
 
 private func execute(_ sql: String, on database: OpaquePointer) throws {
