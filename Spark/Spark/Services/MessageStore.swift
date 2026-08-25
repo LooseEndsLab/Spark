@@ -18,22 +18,26 @@ final class SQLiteMessageStore: MessageStore {
         defer { sqlite3_close(database) }
         sqlite3_exec(database, "PRAGMA query_only = ON", nil, nil, nil)
 
-        // The latest eligible message content is read only for local follow-up
-        // likelihood classification. No text is persisted, logged, or sent off this Mac.
+        // The latest uninterrupted run of eligible messages is read only for local
+        // follow-up likelihood classification. No text is persisted, logged, or sent off this Mac.
         let sql = """
-        WITH latest_message_per_chat AS (
-            SELECT
-                cmj.chat_id,
-                cmj.message_id,
-                ROW_NUMBER() OVER (
-                    PARTITION BY cmj.chat_id
-                    ORDER BY m.date DESC, m.ROWID DESC
-                ) AS position
+        WITH non_reaction_messages AS (
+            SELECT cmj.chat_id, m.ROWID AS message_id, m.date, m.is_from_me, m.text, m.attributedBody
             FROM chat_message_join cmj
             JOIN message m ON m.ROWID = cmj.message_id
             WHERE COALESCE(m.associated_message_type, 0) = 0
+        ), latest_message_per_chat AS (
+            SELECT
+                chat_id,
+                message_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY chat_id
+                    ORDER BY date DESC, message_id DESC
+                ) AS position
+            FROM non_reaction_messages
         )
-        SELECT c.ROWID, c.chat_identifier, c.display_name, m.ROWID, m.date, m.is_from_me, m.text, m.attributedBody,
+        SELECT c.ROWID, c.chat_identifier, c.display_name, m.message_id, m.date, m.is_from_me,
+               trailing.text, trailing.attributedBody,
                EXISTS (
                    SELECT 1 FROM chat_handle_join ch
                    WHERE ch.chat_id = c.ROWID
@@ -46,23 +50,53 @@ final class SQLiteMessageStore: MessageStore {
                    WHERE reaction_join.chat_id = c.ROWID
                      AND COALESCE(reaction.associated_message_type, 0) != 0
                      AND reaction.is_from_me != m.is_from_me
-                     AND (reaction.date > m.date OR (reaction.date = m.date AND reaction.ROWID > m.ROWID))
+                     AND (reaction.date > m.date OR (reaction.date = m.date AND reaction.ROWID > m.message_id))
                )
         FROM latest_message_per_chat latest
         JOIN chat c ON c.ROWID = latest.chat_id
-        JOIN message m ON m.ROWID = latest.message_id
+        JOIN non_reaction_messages m ON m.message_id = latest.message_id
+        LEFT JOIN non_reaction_messages trailing ON trailing.chat_id = m.chat_id
+            AND trailing.is_from_me = m.is_from_me
+            AND NOT EXISTS (
+                SELECT 1
+                FROM non_reaction_messages intervening
+                WHERE intervening.chat_id = m.chat_id
+                  AND intervening.is_from_me != m.is_from_me
+                  AND (intervening.date > trailing.date OR (intervening.date = trailing.date AND intervening.message_id > trailing.message_id))
+                  AND (intervening.date < m.date OR (intervening.date = m.date AND intervening.message_id < m.message_id))
+            )
         WHERE latest.position = 1
+        ORDER BY c.ROWID, m.date, m.message_id, trailing.date, trailing.message_id
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else { throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(database))) }
         defer { sqlite3_finalize(statement) }
-        var messages: [ConversationMessage] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            let rawDate = sqlite3_column_int64(statement, 4)
-            let messageText = MessageTextExtractor.text(plainText: Self.text(statement, 6), attributedBody: Self.data(statement, 7))
-            messages.append(ConversationMessage(chatID: sqlite3_column_int64(statement, 0), chatIdentifier: Self.text(statement, 1) ?? "Unknown conversation", displayName: Self.text(statement, 2), messageID: sqlite3_column_int64(statement, 3), date: Self.dateFromAppleNanoseconds(rawDate), isFromMe: sqlite3_column_int(statement, 5) != 0, isGroupChat: sqlite3_column_int(statement, 8) != 0, hasOppositeDirectionReactionAfterMessage: sqlite3_column_int(statement, 9) != 0, likelihood: FollowUpLikelihood.classify(messageText: messageText)))
+        struct ConversationDraft {
+            let chatID: Int64; let chatIdentifier: String; let displayName: String?; let messageID: Int64
+            let date: Date; let isFromMe: Bool; let isGroupChat: Bool; let hasOppositeDirectionReactionAfterMessage: Bool
+            var messageTexts: [String?]
         }
-        return messages
+        var drafts: [Int64: ConversationDraft] = [:]
+        var messageIDs: [Int64] = []
+        var stepResult: Int32
+        repeat {
+            stepResult = sqlite3_step(statement)
+            guard stepResult == SQLITE_ROW else { break }
+            let messageText = MessageTextExtractor.text(plainText: Self.text(statement, 6), attributedBody: Self.data(statement, 7))
+            let messageID = sqlite3_column_int64(statement, 3)
+            if var draft = drafts[messageID] {
+                draft.messageTexts.append(messageText)
+                drafts[messageID] = draft
+            } else {
+                messageIDs.append(messageID)
+                drafts[messageID] = ConversationDraft(chatID: sqlite3_column_int64(statement, 0), chatIdentifier: Self.text(statement, 1) ?? "Unknown conversation", displayName: Self.text(statement, 2), messageID: messageID, date: Self.dateFromAppleNanoseconds(sqlite3_column_int64(statement, 4)), isFromMe: sqlite3_column_int(statement, 5) != 0, isGroupChat: sqlite3_column_int(statement, 8) != 0, hasOppositeDirectionReactionAfterMessage: sqlite3_column_int(statement, 9) != 0, messageTexts: [messageText])
+            }
+        } while true
+        guard stepResult == SQLITE_DONE else { throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(database))) }
+        return messageIDs.compactMap { messageID in
+            guard let draft = drafts[messageID] else { return nil }
+            return ConversationMessage(chatID: draft.chatID, chatIdentifier: draft.chatIdentifier, displayName: draft.displayName, messageID: draft.messageID, date: draft.date, isFromMe: draft.isFromMe, isGroupChat: draft.isGroupChat, hasOppositeDirectionReactionAfterMessage: draft.hasOppositeDirectionReactionAfterMessage, likelihood: FollowUpLikelihood.classify(messageTexts: draft.messageTexts))
+        }
     }
 
     static func dateFromAppleNanoseconds(_ rawDate: Int64) -> Date {

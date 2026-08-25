@@ -1,8 +1,8 @@
 import Foundation
 
-/// A local, deterministic assessment of whether the sender's latest message
-/// likely calls for a reply. It intentionally uses the same rules regardless
-/// of who sent the message, so Follow Up and Respond stay symmetric.
+/// A local, deterministic assessment of whether the sender's latest run of
+/// messages likely calls for a reply. It intentionally uses the same rules
+/// regardless of who sent the messages, so Follow Up and Respond stay symmetric.
 enum FollowUpLikelihood: Equatable {
     case likely(reason: String)
     case review
@@ -39,6 +39,14 @@ enum FollowUpLikelihood: Equatable {
         }
         if text.hasPrefix("when ") || text.hasPrefix("what ") || text.hasPrefix("where ") || text.hasPrefix("which ") || text.hasPrefix("who ") || text.hasPrefix("how ") || text.hasPrefix("are you") || text.hasPrefix("do you") || text.hasPrefix("did you") || text.hasPrefix("have you") || text.hasPrefix("should we") {
             return .likely(reason: "asked for a decision")
+        }
+        return .review
+    }
+
+    static func classify(messageTexts: [String?]) -> Self {
+        for messageText in messageTexts {
+            let likelihood = classify(messageText: messageText)
+            if likelihood.isLikely { return likelihood }
         }
         return .review
     }

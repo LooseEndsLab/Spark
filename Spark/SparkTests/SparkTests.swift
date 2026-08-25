@@ -81,6 +81,27 @@ struct SparkTests {
         #expect(messages[0].messageID == 2)
     }
 
+    @Test func trailingMessagesAreAllUsedForLikelihoodInSQLiteStore() throws {
+        let messages = try latestMessagesFromTestDatabase([
+            (date: 10, isFromMe: true, associatedMessageType: 0, text: "Can you send the deck?"),
+            (date: 20, isFromMe: true, associatedMessageType: 0, text: "Thanks!"),
+        ])
+
+        #expect(messages.count == 1)
+        #expect(messages[0].likelihood == .likely(reason: "asked a question"))
+    }
+
+    @Test func messagesBeforeAnIncomingReplyAreNotUsedForLikelihoodInSQLiteStore() throws {
+        let messages = try latestMessagesFromTestDatabase([
+            (date: 10, isFromMe: true, associatedMessageType: 0, text: "Can you send the deck?"),
+            (date: 20, isFromMe: false, associatedMessageType: 0, text: "Sure"),
+            (date: 30, isFromMe: true, associatedMessageType: 0, text: "Thanks!"),
+        ])
+
+        #expect(messages.count == 1)
+        #expect(messages[0].likelihood == .review)
+    }
+
     @Test func latestIncomingIsNotWaitingOnThemInSQLiteStore() throws {
         let messages = try latestMessagesFromTestDatabase([
             (date: 10, isFromMe: true),
@@ -146,6 +167,10 @@ struct SparkTests {
         #expect(FollowUpLikelihood.classify(messageText: nil) == .review)
     }
 
+    @Test func anyMessageInTheLatestRunCanBeLikely() {
+        #expect(FollowUpLikelihood.classify(messageTexts: ["Can you send the deck?", "Thanks!"]).isLikely)
+    }
+
     @Test func likelihoodLabelCanNameTheSender() {
         #expect(FollowUpLikelihood.likely(reason: "asked a question").label(subject: "you") == "Likely: you asked a question")
         #expect(FollowUpLikelihood.review.label(subject: "you") == "Review")
@@ -195,6 +220,10 @@ private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe:
 }
 
 private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64)]) throws -> [ConversationMessage] {
+    try latestMessagesFromTestDatabase(messages.map { (date: $0.date, isFromMe: $0.isFromMe, associatedMessageType: $0.associatedMessageType, text: nil) })
+}
+
+private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64, text: String?)]) throws -> [ConversationMessage] {
     let databaseURL = FileManager.default.temporaryDirectory.appending(path: "SparkTests-\(UUID().uuidString).sqlite")
     defer { try? FileManager.default.removeItem(at: databaseURL) }
 
@@ -210,7 +239,8 @@ private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe:
     try execute("CREATE TABLE chat_handle_join (chat_id INTEGER NOT NULL, handle_id INTEGER NOT NULL)", on: database)
     try execute("INSERT INTO chat (chat_identifier, display_name) VALUES ('test', 'Test')", on: database)
     for (index, message) in messages.enumerated() {
-        try execute("INSERT INTO message (date, is_from_me, associated_message_type) VALUES (\(message.date), \(message.isFromMe ? 1 : 0), \(message.associatedMessageType))", on: database)
+        let text = message.text.map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" } ?? "NULL"
+        try execute("INSERT INTO message (date, is_from_me, associated_message_type, text) VALUES (\(message.date), \(message.isFromMe ? 1 : 0), \(message.associatedMessageType), \(text))", on: database)
         try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(index + 1))", on: database)
     }
 
