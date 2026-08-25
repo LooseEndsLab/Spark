@@ -141,6 +141,23 @@ struct SparkTests {
         #expect(FollowUpLikelihood.classify(messageText: "Can you send the deck").isLikely)
     }
 
+    @Test func directRequestsWithoutQuestionMarksAreLikely() {
+        #expect(FollowUpLikelihood.classify(messageText: "Send the deck when you can").isLikely)
+        #expect(FollowUpLikelihood.classify(messageText: "RSVP by Friday").isLikely)
+        #expect(FollowUpLikelihood.classify(messageText: "Keep me posted on the outcome").isLikely)
+    }
+
+    @Test func decisionAndUpdatePromptsWithoutQuestionMarksAreLikely() {
+        #expect(FollowUpLikelihood.classify(messageText: "Does Tuesday work for you").isLikely)
+        #expect(FollowUpLikelihood.classify(messageText: "Thoughts on this approach").isLikely)
+        #expect(FollowUpLikelihood.classify(messageText: "Any news on the application").isLikely)
+    }
+
+    @Test func genericStatementsRemainReview() {
+        #expect(FollowUpLikelihood.classify(messageText: "The deck is ready").isReview)
+        #expect(FollowUpLikelihood.classify(messageText: "Friday is busy for me").isReview)
+    }
+
     @Test func acknowledgementIsKeptForReviewRatherThanLikely() {
         #expect(FollowUpLikelihood.classify(messageText: "Sounds good, thanks!") == .review)
         #expect(FollowUpLikelihood.classify(messageText: nil) == .review)
@@ -228,6 +245,14 @@ struct SparkTests {
     }
 
 }
+
+private extension FollowUpLikelihood {
+    var isReview: Bool {
+        if case .review = self { return true }
+        return false
+    }
+}
+
 private struct StubStore: MessageStore {
     let messages: [ConversationMessage]
     init(_ messages: [ConversationMessage]) { self.messages = messages }

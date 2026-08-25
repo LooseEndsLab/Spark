@@ -105,7 +105,7 @@ struct SettingsView: View {
 
                 likelihoodExplanation(
                     title: "4. Apply the exact local text checks",
-                    detail: "The latest uninterrupted run of eligible messages from the same sender is read locally and transiently. Each text is lowercased and runs of whitespace are collapsed before these checks:\n• Contains “?” → asked a question.\n• Starts with “can you”, “could you”, “would you”, or “will you” → made a request.\n• Contains “please”, “let me know”, “lmk”, “send me”, “confirm”, or “any update” → made a request.\n• Starts with “when ”, “what ”, “where ”, “which ”, “who ”, “how ”, “are you”, “do you”, “did you”, “have you”, or “should we” → asked for a decision."
+                    detail: "The latest uninterrupted run of eligible messages from the same sender is read locally and transiently. Each text is lowercased and runs of whitespace are collapsed before these checks:\n• Contains “?” → asked a question.\n• Starts with “can you”, “could you”, “would you”, or “will you” → made a request.\n• Contains “please”, “let me know”, “lmk”, “send me”, “confirm”, or “any update” → made a request.\n• Starts with “send”, “call”, “reply”, “review”, “check”, “share”, “tell me”, “keep me posted”, or “RSVP” → made a request.\n• Starts with “any news”, “status update”, or “following up” → requested an update.\n• Starts with “when ”, “what ”, “where ”, “which ”, “who ”, “how ”, “are you”, “is ”, “does ”, “do you”, “did you”, “have you”, “should we”, “thoughts”, or “any thoughts” → asked for a decision."
                 )
 
                 likelihoodExplanation(

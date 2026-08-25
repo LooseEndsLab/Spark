@@ -37,7 +37,13 @@ enum FollowUpLikelihood: Equatable {
         if text.contains("please") || text.contains("let me know") || text.contains("lmk") || text.contains("send me") || text.contains("confirm") || text.contains("any update") {
             return .likely(reason: "made a request")
         }
-        if text.hasPrefix("when ") || text.hasPrefix("what ") || text.hasPrefix("where ") || text.hasPrefix("which ") || text.hasPrefix("who ") || text.hasPrefix("how ") || text.hasPrefix("are you") || text.hasPrefix("do you") || text.hasPrefix("did you") || text.hasPrefix("have you") || text.hasPrefix("should we") {
+        if ["send ", "call ", "reply ", "review ", "check ", "share ", "tell me", "keep me posted", "rsvp"].contains(where: text.hasPrefix) {
+            return .likely(reason: "made a request")
+        }
+        if text.hasPrefix("any news") || text.hasPrefix("status update") || text.hasPrefix("following up") {
+            return .likely(reason: "requested an update")
+        }
+        if text.hasPrefix("when ") || text.hasPrefix("what ") || text.hasPrefix("where ") || text.hasPrefix("which ") || text.hasPrefix("who ") || text.hasPrefix("how ") || text.hasPrefix("are you") || text.hasPrefix("is ") || text.hasPrefix("does ") || text.hasPrefix("do you") || text.hasPrefix("did you") || text.hasPrefix("have you") || text.hasPrefix("should we") || text.hasPrefix("thoughts") || text.hasPrefix("any thoughts") {
             return .likely(reason: "asked for a decision")
         }
         return .review
