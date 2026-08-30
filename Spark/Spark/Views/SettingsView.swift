@@ -9,31 +9,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                Toggle("Only show contacts", isOn: $model.onlyContacts)
-                    .toggleStyle(SwitchToggleStyle(tint: .blue))
-                Text("When enabled, Spark only shows conversations whose identifiers match an entry in your local Contacts database.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Spark Settings")
-                        .font(.title2.weight(.semibold))
-                    Text("Choose which conversations should appear in your follow-up list.")
-                        .foregroundStyle(.secondary)
-                }
-                .textCase(nil)
-            }
-
-            Section("Appearance") {
-                Picker("Accent color", selection: $model.accentColor) {
-                    ForEach(AppAccent.allCases) { accent in
-                        Text(accent.title).tag(accent)
-                    }
-                }
-            }
-
-            Section("Follow-up filtering") {
+            Section("Follow-up rules") {
                 LabeledContent {
                     daysField(text: $thresholdDaysText, isFocused: $isThresholdFieldFocused, onSubmit: commitThresholdDays)
                 } label: {
@@ -46,7 +22,19 @@ struct SettingsView: View {
                     focusableSettingLabel("Ignore conversations older than") { isMaximumAgeFieldFocused = true }
                 }
 
-                Text("Enter a value between \(model.thresholdDays) and 3,650 days. The default is 90 days.")
+                Text("The follow-up delay can be 1–365 days. The maximum age must be at least as long as that delay, up to 3,650 days.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Conversation filters") {
+                Toggle("Only show contacts", isOn: $model.onlyContacts)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Toggle("Treat reactions as replies", isOn: $model.treatReactionsAsReplies)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Text("When contacts-only is on, Spark shows conversations whose identifiers match an entry in your local Contacts database.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -54,75 +42,82 @@ struct SettingsView: View {
             Section("App behavior") {
                 Toggle("Notifications", isOn: $model.notificationsEnabled)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
-                Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
-                    .toggleStyle(SwitchToggleStyle(tint: .blue))
-                Toggle("Treat reactions as replies", isOn: $model.treatReactionsAsReplies)
-                    .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Launch at Login", isOn: $model.launchAtLogin)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
-            }
 
-            Section("Ignored Conversations") {
-                if model.ignoredChats.isEmpty {
-                    Text("No conversations are currently ignored.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.ignoredChats, id: \.self) { id in
-                        HStack {
-                            Text("Chat \(id)")
-                            Spacer()
-                            Button("Unignore") { model.unignore(id) }
-                        }
+                Picker("Accent color", selection: $model.accentColor) {
+                    ForEach(AppAccent.allCases) { accent in
+                        Text(accent.title).tag(accent)
                     }
                 }
             }
 
-            Section("Dismissed Conversations") {
-                Text("Resetting restores conversations hidden with Dismiss that still meet the criteria for that list.")
+            Section("Manage saved activity") {
+                LabeledContent("Ignored conversations") {
+                    Text("\(model.ignoredChats.count)")
+                        .foregroundStyle(.secondary)
+                }
+
+                if model.ignoredChats.isEmpty {
+                    Text("No conversations are currently ignored.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.ignoredChats, id: \.self) { id in
+                        LabeledContent("Chat \(id)") {
+                            Button("Unignore") { model.unignore(id) }
+                        }
+                    }
+                }
+
+                Text("Restore items that still meet your current follow-up rules.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                HStack {
-                    Button("Reset Dismissed Follow-ups") {
+                LabeledContent("Dismissed follow-ups") {
+                    Button("Restore") {
                         model.resetDismissedFollowUps()
                     }
                     .disabled(!model.hasDismissedFollowUps)
-                    Spacer()
-                    Button("Reset Dismissed Responses") {
+                }
+                LabeledContent("Dismissed responses") {
+                    Button("Restore") {
                         model.resetDismissedResponses()
                     }
                     .disabled(!model.hasDismissedResponses)
                 }
             }
 
-            Section("How “Suggested” is calculated") {
-                likelihoodExplanation(
-                    title: "1. Find the latest conversation message",
-                    detail: "For each one-to-one chat, Spark finds the latest non-reaction message overall before checking who sent it. A newer normal reply means the chat is not pending."
-                )
+            Section {
+                DisclosureGroup("How Spark decides what to suggest") {
+                    likelihoodExplanation(
+                        title: "1. Find the latest conversation message",
+                        detail: "For each one-to-one chat, Spark finds the latest non-reaction message overall before checking who sent it. A newer normal reply means the chat is not pending."
+                    )
 
-                likelihoodExplanation(
-                    title: "2. Apply the response rule",
-                    detail: "Your latest message appears in Follow Up; their latest message appears in Respond. When “Treat reactions as replies” is on, a newer reaction from the other person also counts as an acknowledgement."
-                )
+                    likelihoodExplanation(
+                        title: "2. Apply the response rule",
+                        detail: "Your latest message appears in Follow Up; their latest message appears in Respond. When “Treat reactions as replies” is on, a newer reaction from the other person also counts as an acknowledgement."
+                    )
 
-                likelihoodExplanation(
-                    title: "3. Apply the age limits",
-                    detail: "“Follow up after” is the minimum number of days since that latest message. “Ignore conversations older than” excludes chats beyond that maximum age."
-                )
+                    likelihoodExplanation(
+                        title: "3. Apply the age limits",
+                        detail: "“Follow up after” is the minimum number of days since that latest message. “Ignore conversations older than” excludes chats beyond that maximum age."
+                    )
 
-                likelihoodExplanation(
-                    title: "4. Apply the exact local text checks",
-                    detail: "The latest uninterrupted run of eligible messages from the same sender is read locally and transiently. Each text is lowercased and runs of whitespace are collapsed before these checks:\n• Contains “?” → asked a question.\n• Starts with “can you”, “could you”, “would you”, or “will you” → made a request.\n• Contains “please”, “let me know”, “lmk”, “send me”, “confirm”, or “any update” → made a request.\n• Starts with “send”, “call”, “reply”, “review”, “check”, “share”, “tell me”, “keep me posted”, or “RSVP” → made a request.\n• Starts with “any news”, “status update”, or “following up” → requested an update.\n• Starts with “when ”, “what ”, “where ”, “which ”, “who ”, “how ”, “are you”, “is ”, “does ”, “do you”, “did you”, “have you”, “should we”, “thoughts”, or “any thoughts” → asked for a decision."
-                )
+                    likelihoodExplanation(
+                        title: "4. Apply the exact local text checks",
+                        detail: "The latest uninterrupted run of eligible messages from the same sender is read locally and transiently. Each text is lowercased and runs of whitespace are collapsed before these checks:\n• Contains “?” → asked a question.\n• Starts with “can you”, “could you”, “would you”, or “will you” → made a request.\n• Contains “please”, “let me know”, “lmk”, “send me”, “confirm”, or “any update” → made a request.\n• Starts with “send”, “call”, “reply”, “review”, “check”, “share”, “tell me”, “keep me posted”, or “RSVP” → made a request.\n• Starts with “any news”, “status update”, or “following up” → requested an update.\n• Starts with “when ”, “what ”, “where ”, “which ”, “who ”, “how ”, “are you”, “is ”, “does ”, “do you”, “did you”, “have you”, “should we”, “thoughts”, or “any thoughts” → asked for a decision."
+                    )
 
-                likelihoodExplanation(
-                    title: "5. Keep everything else available for review",
-                    detail: "An empty message, or a message that matches none of those checks, is marked Review rather than Suggested. It remains in All if it passed the conversation, response, and age rules above. Message text is never saved or sent anywhere."
-                )
+                    likelihoodExplanation(
+                        title: "5. Keep everything else available for review",
+                        detail: "An empty message, or a message that matches none of those checks, is marked Review rather than Suggested. It remains in All if it passed the conversation, response, and age rules above. Message text is never saved or sent anywhere."
+                    )
+                }
             }
         }
         .formStyle(.grouped)
-        .frame(width: 500, height: 850)
+        .frame(width: 500, height: 680)
         .onAppear(perform: syncDayFields)
         .onChange(of: isThresholdFieldFocused) { isFocused in
             if !isFocused { commitThresholdDays() }
