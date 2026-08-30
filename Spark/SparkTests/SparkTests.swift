@@ -136,6 +136,14 @@ struct SparkTests {
         #expect(index.name(for: "riley@example.com") == "Riley")
     }
 
+    @Test func contactAvatarsMatchEquivalentPhoneFormats() {
+        var index = ContactNameIndex()
+        let avatar = Data([0x01, 0x02])
+        index.add(name: "Taylor", phoneNumbers: ["+1 (415) 555-1234"], emailAddresses: [], thumbnailImageData: avatar)
+
+        #expect(index.avatarData(for: "4155551234") == avatar)
+    }
+
     @Test func questionIsLikelyForEitherConversationDirection() {
         #expect(FollowUpLikelihood.classify(messageText: "Are you free Thursday?").isLikely)
         #expect(FollowUpLikelihood.classify(messageText: "Can you send the deck").isLikely)

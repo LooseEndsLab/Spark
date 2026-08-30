@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 struct FollowUpRow: View {
     @EnvironmentObject private var model: AppModel
     let followUp: FollowUp
@@ -11,6 +12,7 @@ struct FollowUpRow: View {
                 model.openInMessages(followUp)
             } label: {
                 HStack {
+                    contactAvatar
                     VStack(alignment: .leading) {
                         Text(model.name(for: followUp)).lineLimit(1)
                         Text("\(followUp.likelihood.label(subject: likelihoodSubject)) · \(followUp.daysOld())d \(statusText)")
@@ -39,5 +41,28 @@ struct FollowUpRow: View {
             .menuStyle(.borderlessButton)
         }
         .padding(.vertical, 5)
+    }
+
+    @ViewBuilder private var contactAvatar: some View {
+        if let data = model.avatarData(for: followUp), let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 34, height: 34)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        } else {
+            Text(initials)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 34, height: 34)
+                .background(.quaternary, in: Circle())
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var initials: String {
+        let components = model.name(for: followUp).split(whereSeparator: { $0.isWhitespace })
+        return String(components.prefix(2).compactMap(\.first))
     }
 }

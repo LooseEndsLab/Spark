@@ -4,22 +4,32 @@ import Foundation
 struct ContactNameIndex {
     private var namesByPhoneKey: [String: String] = [:]
     private var namesByEmail: [String: String] = [:]
+    private var avatarsByPhoneKey: [String: Data] = [:]
+    private var avatarsByEmail: [String: Data] = [:]
 
-    mutating func add(name: String, phoneNumbers: [String], emailAddresses: [String]) {
+    mutating func add(name: String, phoneNumbers: [String], emailAddresses: [String], thumbnailImageData: Data? = nil) {
         guard !name.isEmpty else { return }
         for phoneNumber in phoneNumbers {
             for key in Self.phoneKeys(for: phoneNumber) {
                 namesByPhoneKey[key, default: name] = name
+                if let thumbnailImageData { avatarsByPhoneKey[key, default: thumbnailImageData] = thumbnailImageData }
             }
         }
         for emailAddress in emailAddresses {
-            namesByEmail[Self.emailKey(for: emailAddress), default: name] = name
+            let key = Self.emailKey(for: emailAddress)
+            namesByEmail[key, default: name] = name
+            if let thumbnailImageData { avatarsByEmail[key, default: thumbnailImageData] = thumbnailImageData }
         }
     }
 
     func name(for identifier: String) -> String? {
         if let name = namesByEmail[Self.emailKey(for: identifier)] { return name }
         return Self.phoneKeys(for: identifier).lazy.compactMap { namesByPhoneKey[$0] }.first
+    }
+
+    func avatarData(for identifier: String) -> Data? {
+        if let avatar = avatarsByEmail[Self.emailKey(for: identifier)] { return avatar }
+        return Self.phoneKeys(for: identifier).lazy.compactMap { avatarsByPhoneKey[$0] }.first
     }
 
     static func phoneKeys(for value: String) -> Set<String> {
@@ -37,54 +47,67 @@ struct ContactNameIndex {
     }
 }
 
+struct ResolvedContacts {
+    let names: [String: String]
+    let avatarData: [String: Data]
+}
+
 final class ContactsNameResolver {
     private let contactStore = CNContactStore()
     private let queue = DispatchQueue(label: "com.looseends.spark.contacts", qos: .utility)
     private var index = ContactNameIndex()
     private var hasLoadedContacts = false
     private var namesByIdentifier: [String: String] = [:]
+    private var avatarDataByIdentifier: [String: Data] = [:]
 
-    func names(for identifiers: [String]) async -> [String: String] {
+    func contacts(for identifiers: [String]) async -> ResolvedContacts {
         await withCheckedContinuation { continuation in
             queue.async {
-                self.resolveNames(for: identifiers, continuation: continuation)
+                self.resolveContacts(for: identifiers, continuation: continuation)
             }
         }
     }
 
-    private func resolveNames(for identifiers: [String], continuation: CheckedContinuation<[String: String], Never>) {
+    private func resolveContacts(for identifiers: [String], continuation: CheckedContinuation<ResolvedContacts, Never>) {
         let unresolved = Set(identifiers).subtracting(namesByIdentifier.keys)
         guard !unresolved.isEmpty else {
-            continuation.resume(returning: namesByIdentifier)
+            continuation.resume(returning: resolvedContacts)
             return
         }
 
         switch CNContactStore.authorizationStatus(for: .contacts) {
         case .authorized:
             loadContactsIfNeeded()
-            cacheNames(for: unresolved)
-            continuation.resume(returning: namesByIdentifier)
+            cacheContacts(for: unresolved)
+            continuation.resume(returning: resolvedContacts)
         case .notDetermined:
             contactStore.requestAccess(for: .contacts) { granted, _ in
                 self.queue.async {
                     guard granted else {
-                        continuation.resume(returning: self.namesByIdentifier)
+                        continuation.resume(returning: self.resolvedContacts)
                         return
                     }
                     self.loadContactsIfNeeded()
-                    self.cacheNames(for: unresolved)
-                    continuation.resume(returning: self.namesByIdentifier)
+                    self.cacheContacts(for: unresolved)
+                    continuation.resume(returning: self.resolvedContacts)
                 }
             }
         default:
-            continuation.resume(returning: namesByIdentifier)
+            continuation.resume(returning: resolvedContacts)
         }
     }
 
-    private func cacheNames(for identifiers: Set<String>) {
+    private var resolvedContacts: ResolvedContacts {
+        ResolvedContacts(names: namesByIdentifier, avatarData: avatarDataByIdentifier)
+    }
+
+    private func cacheContacts(for identifiers: Set<String>) {
         for identifier in identifiers {
             if let name = index.name(for: identifier) {
                 namesByIdentifier[identifier] = name
+            }
+            if let avatarData = index.avatarData(for: identifier) {
+                avatarDataByIdentifier[identifier] = avatarData
             }
         }
     }
@@ -99,6 +122,7 @@ final class ContactsNameResolver {
             CNContactNicknameKey as CNKeyDescriptor,
             CNContactPhoneNumbersKey as CNKeyDescriptor,
             CNContactEmailAddressesKey as CNKeyDescriptor,
+            CNContactThumbnailImageDataKey as CNKeyDescriptor,
         ]
         let request = CNContactFetchRequest(keysToFetch: keys)
         try? contactStore.enumerateContacts(with: request) { [weak self] contact, _ in
@@ -107,7 +131,8 @@ final class ContactsNameResolver {
             self.index.add(
                 name: name,
                 phoneNumbers: contact.phoneNumbers.map { $0.value.stringValue },
-                emailAddresses: contact.emailAddresses.map { $0.value as String }
+                emailAddresses: contact.emailAddresses.map { $0.value as String },
+                thumbnailImageData: contact.thumbnailImageData
             )
         }
     }

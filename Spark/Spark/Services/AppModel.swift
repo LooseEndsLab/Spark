@@ -15,6 +15,7 @@ import Combine
     private var ignoredChatIDs: Set<Int64>; private var dismissedFollowUpMessageIDs: Set<Int64>; private var dismissedResponseMessageIDs: Set<Int64>; private var notifiedMessageIDs: Set<Int64>
     private var refreshGeneration = 0
     @Published private(set) var contactNames: [String: String] = [:]
+    @Published private(set) var contactAvatarData: [String: Data] = [:]
     init(store: MessageStore = SQLiteMessageStore(), notifier: NotificationManager = NotificationManager(), defaults: UserDefaults = .standard) {
         let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 1)
         let initialMaximumConversationAgeDays = max(initialThresholdDays, defaults.object(forKey: "maximumConversationAgeDays") as? Int ?? 90)
@@ -56,11 +57,12 @@ import Combine
                 switch result {
                 case .success(let statuses):
                     let allConversations = statuses.waitingOnThem + statuses.waitingOnYou
-                    let contactNames = await contactsNameResolver.names(for: allConversations.map(\.conversation.chatIdentifier))
+                    let contacts = await contactsNameResolver.contacts(for: allConversations.map(\.conversation.chatIdentifier))
                     guard self.refreshGeneration == generation else { return }
-                    self.contactNames = contactNames
-                    followUps = onlyContacts ? statuses.waitingOnThem.filter { contactNames[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnThem
-                    ghostedConversations = onlyContacts ? statuses.waitingOnYou.filter { contactNames[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnYou
+                    self.contactNames = contacts.names
+                    self.contactAvatarData = contacts.avatarData
+                    followUps = onlyContacts ? statuses.waitingOnThem.filter { contacts.names[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnThem
+                    ghostedConversations = onlyContacts ? statuses.waitingOnYou.filter { contacts.names[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnYou
                     errorMessage = nil
                     isLoading = false
                     await refreshNotifications()
@@ -106,6 +108,7 @@ import Combine
     }
     func openInMessages(_ item: FollowUp) { MessagesLauncher.open(chatIdentifier: item.conversation.chatIdentifier) }
     func name(for item: FollowUp) -> String { contactNames[item.conversation.chatIdentifier] ?? item.name }
+    func avatarData(for item: FollowUp) -> Data? { contactAvatarData[item.conversation.chatIdentifier] }
     func unignore(_ id: Int64) { ignoredChatIDs.remove(id); save(ignoredChatIDs, "ignoredChatIDs"); refresh() }
     var ignoredChats: [Int64] { ignoredChatIDs.sorted() }
     var hasDismissedFollowUps: Bool { !dismissedFollowUpMessageIDs.isEmpty }
