@@ -199,6 +199,19 @@ struct SparkTests {
         #expect(store.requestedMessageIDs == [1])
     }
 
+    @Test func groupChatsAreIncludedWhenGroupFilteringIsDisabled() throws {
+        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true)
+        let followUps = try FollowUpChecker(store: StubStore([group])).findFollowUps(
+            thresholdDays: 7,
+            ignoredChatIDs: [],
+            dismissedMessageIDs: [],
+            ignoreGroupChats: false,
+            now: now
+        )
+        #expect(followUps.count == 1)
+        #expect(followUps.first?.conversation.isGroupChat == true)
+    }
+
     @Test func SQLiteTrailingRunUsesEarlierQuestionButStopsAtIncomingMessage() throws {
         #expect(try trailingRunLikelihoodFromTestDatabase([
             (10, true, "Can you send the deck?"),

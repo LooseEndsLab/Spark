@@ -15,7 +15,7 @@ struct FollowUpRow: View {
                     contactAvatar
                     VStack(alignment: .leading) {
                         Text(model.name(for: followUp)).lineLimit(1)
-                        Text("\(followUp.likelihood.label(subject: likelihoodSubject)) · \(followUp.daysOld())d \(statusText)")
+                        Text(detailText)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -41,6 +41,11 @@ struct FollowUpRow: View {
             .menuStyle(.borderlessButton)
         }
         .padding(.vertical, 5)
+    }
+
+    private var detailText: String {
+        let groupLabel = followUp.conversation.isGroupChat ? " · Group chat" : ""
+        return "\(followUp.likelihood.label(subject: likelihoodSubject)) · \(followUp.daysOld())d \(statusText)\(groupLabel)"
     }
 
     @ViewBuilder private var contactAvatar: some View {

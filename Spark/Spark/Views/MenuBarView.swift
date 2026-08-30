@@ -118,6 +118,7 @@ struct MenuBarView: View {
             }
         }
     }
+
 }
 
 private struct SlidingChoiceToggle<Value: Hashable>: View {
