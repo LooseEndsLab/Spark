@@ -1,5 +1,12 @@
 import Foundation
 import Combine
+
+enum ConversationVisibility {
+    static func includes(_ followUp: FollowUp, onlyContacts: Bool, contactNames: [String: String]) -> Bool {
+        followUp.conversation.isGroupChat || !onlyContacts || contactNames[followUp.conversation.chatIdentifier] != nil
+    }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var followUps: [FollowUp] = []; @Published private(set) var ghostedConversations: [FollowUp] = []; @Published private(set) var errorMessage: String?; @Published private(set) var isLoading = true
     @Published var thresholdDays: Int { didSet { if maximumConversationAgeDays < thresholdDays { maximumConversationAgeDays = thresholdDays }; defaults.set(max(1, thresholdDays), forKey: "thresholdDays"); refresh() } }
@@ -61,8 +68,8 @@ import Combine
                     guard self.refreshGeneration == generation else { return }
                     self.contactNames = contacts.names
                     self.contactAvatarData = contacts.avatarData
-                    followUps = onlyContacts ? statuses.waitingOnThem.filter { contacts.names[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnThem
-                    ghostedConversations = onlyContacts ? statuses.waitingOnYou.filter { contacts.names[$0.conversation.chatIdentifier] != nil } : statuses.waitingOnYou
+                    followUps = statuses.waitingOnThem.filter { ConversationVisibility.includes($0, onlyContacts: onlyContacts, contactNames: contacts.names) }
+                    ghostedConversations = statuses.waitingOnYou.filter { ConversationVisibility.includes($0, onlyContacts: onlyContacts, contactNames: contacts.names) }
                     errorMessage = nil
                     isLoading = false
                     await refreshNotifications()
@@ -106,7 +113,12 @@ import Combine
         save(ignoredChatIDs, "ignoredChatIDs")
         removeFromVisibleConversations(chatID: item.chatID)
     }
-    func openInMessages(_ item: FollowUp) { MessagesLauncher.open(chatIdentifier: item.conversation.chatIdentifier) }
+    func openInMessages(_ item: FollowUp) {
+        MessagesLauncher.open(
+            chatIdentifier: item.conversation.chatIdentifier,
+            isGroupChat: item.conversation.isGroupChat
+        )
+    }
     func name(for item: FollowUp) -> String { contactNames[item.conversation.chatIdentifier] ?? item.name }
     func avatarData(for item: FollowUp) -> Data? { contactAvatarData[item.conversation.chatIdentifier] }
     func unignore(_ id: Int64) { ignoredChatIDs.remove(id); save(ignoredChatIDs, "ignoredChatIDs"); refresh() }

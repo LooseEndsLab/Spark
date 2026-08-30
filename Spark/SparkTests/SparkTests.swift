@@ -117,8 +117,26 @@ struct SparkTests {
         #expect(MessagesLauncher.url(for: "+15555550123")?.absoluteString == "sms:+15555550123")
     }
 
+    @Test func messagesLauncherUsesAnEmailAddressAsTheRecipient() {
+        #expect(MessagesLauncher.url(for: "person@example.com")?.absoluteString == "sms:person@example.com")
+    }
+
+    @Test func messagesLauncherUsesTheGroupIdentifierToOpenAnExistingGroup() {
+        #expect(MessagesLauncher.url(for: "chat90812796164993437", isGroupChat: true)?.absoluteString == "sms://open?groupid=chat90812796164993437")
+    }
+
     @Test func messagesLauncherRejectsNonRecipientChatIdentifiers() {
         #expect(MessagesLauncher.url(for: "iMessage;+;chat123") == nil)
+    }
+
+    @Test func unnamedGroupChatsUseAReadableTitle() {
+        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: nil, messageID: 10, date: now, isFromMe: true, isGroupChat: true, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
+        #expect(FollowUp(conversation: conversation).name == "Group Chat")
+    }
+
+    @Test func namedGroupChatsUseTheirMessagesTitle() {
+        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: "Weekend Plans", messageID: 10, date: now, isFromMe: true, isGroupChat: true, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
+        #expect(FollowUp(conversation: conversation).name == "Weekend Plans")
     }
 
     @Test func contactNamesMatchEquivalentNorthAmericanPhoneFormats() {
@@ -210,6 +228,16 @@ struct SparkTests {
         )
         #expect(followUps.count == 1)
         #expect(followUps.first?.conversation.isGroupChat == true)
+    }
+
+    @Test func onlyContactsKeepsGroupChatsButHidesUnknownDirectChats() {
+        let group = FollowUp(conversation: message(daysAgo: 20, chatID: 1, isGroup: true))
+        let unknownDirect = FollowUp(conversation: message(daysAgo: 20, chatID: 2, isGroup: false))
+        let knownDirect = FollowUp(conversation: ConversationMessage(chatID: 3, chatIdentifier: "known", displayName: "Known", messageID: 3, date: now, isFromMe: true, isGroupChat: false, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review))
+
+        #expect(ConversationVisibility.includes(group, onlyContacts: true, contactNames: [:]))
+        #expect(!ConversationVisibility.includes(unknownDirect, onlyContacts: true, contactNames: [:]))
+        #expect(ConversationVisibility.includes(knownDirect, onlyContacts: true, contactNames: ["known": "Known"]))
     }
 
     @Test func SQLiteTrailingRunUsesEarlierQuestionButStopsAtIncomingMessage() throws {
