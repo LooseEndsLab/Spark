@@ -80,11 +80,7 @@ struct MenuBarView: View {
             Divider()
 
             HStack {
-                Button("Refresh Follow-ups") { model.refresh() }
-                    .help("Check Messages for the latest follow-ups and responses")
-                Button("Reset Dismissed") { model.resetDismissedConversations() }
-                    .disabled(!model.hasDismissedConversations)
-                    .help("Restore conversations hidden with Dismiss")
+                Button("Refresh") { model.refresh() }
                 Spacer()
                 Button("Settings") { openWindow(id: "settings") }
                 Spacer()
