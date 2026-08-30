@@ -13,7 +13,7 @@ import SQLite3
 struct SparkTests {
 
     private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
-    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, isGroup: Bool = false, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: isGroup, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
+    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, isGroup: Bool = false, participantCount: Int = 0, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: isGroup, participantCount: participantCount, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
     private func results(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findFollowUps(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     private func ghostedResults(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findGhostedConversations(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     @Test func outgoingOlderThanThresholdIsFollowUp() throws { #expect(try results([message(daysAgo: 7)]).count == 1) }
@@ -113,6 +113,17 @@ struct SparkTests {
         #expect(messages[0].hasOppositeDirectionReactionAfterMessage)
     }
 
+    @Test func SQLiteStoreReportsTheTotalGroupParticipantCount() throws {
+        let messages = try latestMessagesFromTestDatabase([
+            (date: 10, isFromMe: true, associatedMessageType: 0),
+        ], otherParticipantCount: 3)
+
+        #expect(messages.count == 1)
+        #expect(messages[0].isGroupChat)
+        #expect(messages[0].participantCount == 4)
+        #expect(FollowUp(conversation: messages[0]).groupDescription == "4 people")
+    }
+
     @Test func messagesLauncherUsesThePhoneNumberAsTheRecipient() {
         #expect(MessagesLauncher.url(for: "+15555550123")?.absoluteString == "sms:+15555550123")
     }
@@ -130,12 +141,12 @@ struct SparkTests {
     }
 
     @Test func unnamedGroupChatsUseAReadableTitle() {
-        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: nil, messageID: 10, date: now, isFromMe: true, isGroupChat: true, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
+        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: nil, messageID: 10, date: now, isFromMe: true, isGroupChat: true, participantCount: 4, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
         #expect(FollowUp(conversation: conversation).name == "Group Chat")
     }
 
     @Test func namedGroupChatsUseTheirMessagesTitle() {
-        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: "Weekend Plans", messageID: 10, date: now, isFromMe: true, isGroupChat: true, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
+        let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: "Weekend Plans", messageID: 10, date: now, isFromMe: true, isGroupChat: true, participantCount: 4, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
         #expect(FollowUp(conversation: conversation).name == "Weekend Plans")
     }
 
@@ -211,14 +222,14 @@ struct SparkTests {
         let dismissed = message(daysAgo: 20, chatID: 4, messageID: 4)
         let reacted = message(daysAgo: 20, chatID: 5, messageID: 5, hasReactionResponse: true)
         let tooOld = message(daysAgo: 100, chatID: 6, messageID: 6)
-        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true)
+        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true, participantCount: 4)
         let store = RunSpyStore(messages: [eligible, recent, ignored, dismissed, reacted, tooOld, group], runs: [1: ["Can you help?"], 2: ["Can you help?"], 3: ["Can you help?"], 4: ["Can you help?"], 5: ["Can you help?"], 6: ["Can you help?"], 7: ["Can you help?"]])
         _ = try FollowUpChecker(store: store).findFollowUps(thresholdDays: 7, maximumAgeDays: 90, ignoredChatIDs: [3], dismissedMessageIDs: [4], ignoreGroupChats: true, now: now)
         #expect(store.requestedMessageIDs == [1])
     }
 
     @Test func groupChatsAreIncludedWhenGroupFilteringIsDisabled() throws {
-        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true)
+        let group = message(daysAgo: 20, chatID: 7, messageID: 7, isGroup: true, participantCount: 4)
         let followUps = try FollowUpChecker(store: StubStore([group])).findFollowUps(
             thresholdDays: 7,
             ignoredChatIDs: [],
@@ -228,12 +239,13 @@ struct SparkTests {
         )
         #expect(followUps.count == 1)
         #expect(followUps.first?.conversation.isGroupChat == true)
+        #expect(followUps.first?.conversation.participantCount == 4)
     }
 
     @Test func onlyContactsKeepsGroupChatsButHidesUnknownDirectChats() {
         let group = FollowUp(conversation: message(daysAgo: 20, chatID: 1, isGroup: true))
         let unknownDirect = FollowUp(conversation: message(daysAgo: 20, chatID: 2, isGroup: false))
-        let knownDirect = FollowUp(conversation: ConversationMessage(chatID: 3, chatIdentifier: "known", displayName: "Known", messageID: 3, date: now, isFromMe: true, isGroupChat: false, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review))
+        let knownDirect = FollowUp(conversation: ConversationMessage(chatID: 3, chatIdentifier: "known", displayName: "Known", messageID: 3, date: now, isFromMe: true, isGroupChat: false, participantCount: 2, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review))
 
         #expect(ConversationVisibility.includes(group, onlyContacts: true, contactNames: [:]))
         #expect(!ConversationVisibility.includes(unknownDirect, onlyContacts: true, contactNames: [:]))
@@ -325,7 +337,7 @@ private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe:
     try latestMessagesFromTestDatabase(messages.map { (date: $0.date, isFromMe: $0.isFromMe, associatedMessageType: 0) })
 }
 
-private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64)]) throws -> [ConversationMessage] {
+private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe: Bool, associatedMessageType: Int64)], otherParticipantCount: Int = 0) throws -> [ConversationMessage] {
     let databaseURL = FileManager.default.temporaryDirectory.appending(path: "SparkTests-\(UUID().uuidString).sqlite")
     defer { try? FileManager.default.removeItem(at: databaseURL) }
 
@@ -343,6 +355,9 @@ private func latestMessagesFromTestDatabase(_ messages: [(date: Int64, isFromMe:
     for (index, message) in messages.enumerated() {
         try execute("INSERT INTO message (date, is_from_me, associated_message_type) VALUES (\(message.date), \(message.isFromMe ? 1 : 0), \(message.associatedMessageType))", on: database)
         try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(index + 1))", on: database)
+    }
+    for handleID in 0..<otherParticipantCount {
+        try execute("INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (1, \(handleID + 1))", on: database)
     }
 
     return try SQLiteMessageStore(databaseURL: databaseURL).latestConversationMessages()

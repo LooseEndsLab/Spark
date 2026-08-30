@@ -36,7 +36,7 @@ struct FollowUpChecker {
         let candidates = try metadataCandidates
             .map { candidate -> FollowUp in
                 let likelihood = try store.likelihoodForTrailingRun(in: candidate)
-                let classified = ConversationMessage(chatID: candidate.chatID, chatIdentifier: candidate.chatIdentifier, displayName: candidate.displayName, messageID: candidate.messageID, date: candidate.date, isFromMe: candidate.isFromMe, isGroupChat: candidate.isGroupChat, hasOppositeDirectionReactionAfterMessage: candidate.hasOppositeDirectionReactionAfterMessage, likelihood: likelihood)
+                let classified = ConversationMessage(chatID: candidate.chatID, chatIdentifier: candidate.chatIdentifier, displayName: candidate.displayName, messageID: candidate.messageID, date: candidate.date, isFromMe: candidate.isFromMe, isGroupChat: candidate.isGroupChat, participantCount: candidate.participantCount, hasOppositeDirectionReactionAfterMessage: candidate.hasOppositeDirectionReactionAfterMessage, likelihood: likelihood)
                 return FollowUp(conversation: classified)
             }
             .sorted { $0.conversation.date < $1.conversation.date }

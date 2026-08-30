@@ -40,13 +40,15 @@ final class SQLiteMessageStore: MessageStore {
             FROM chat_message_join cmj
             JOIN message m ON m.ROWID = cmj.message_id
             WHERE COALESCE(m.associated_message_type, 0) = 0
+        ),
+        participant_counts AS (
+            SELECT chat_id, COUNT(*) + 1 AS participant_count
+            FROM chat_handle_join
+            GROUP BY chat_id
         )
         SELECT c.ROWID, c.chat_identifier, c.display_name, m.ROWID, m.date, m.is_from_me,
-               EXISTS (
-                   SELECT 1 FROM chat_handle_join ch
-                   WHERE ch.chat_id = c.ROWID
-                   GROUP BY ch.chat_id HAVING COUNT(*) > 1
-               ),
+               COALESCE(participant_counts.participant_count, 1) > 2,
+               COALESCE(participant_counts.participant_count, 1),
                EXISTS (
                    SELECT 1
                    FROM chat_message_join reaction_join
@@ -59,6 +61,7 @@ final class SQLiteMessageStore: MessageStore {
         FROM latest_message_per_chat latest
         JOIN chat c ON c.ROWID = latest.chat_id
         JOIN message m ON m.ROWID = latest.message_id
+        LEFT JOIN participant_counts ON participant_counts.chat_id = c.ROWID
         WHERE latest.position = 1
         """
         var statement: OpaquePointer?
@@ -70,7 +73,7 @@ final class SQLiteMessageStore: MessageStore {
             if result == SQLITE_DONE { break }
             guard result == SQLITE_ROW else { throw MessageStoreError.queryFailed(String(cString: sqlite3_errmsg(database))) }
             let rawDate = sqlite3_column_int64(statement, 4)
-            messages.append(ConversationMessage(chatID: sqlite3_column_int64(statement, 0), chatIdentifier: Self.text(statement, 1) ?? "Unknown conversation", displayName: Self.text(statement, 2), messageID: sqlite3_column_int64(statement, 3), date: Self.dateFromAppleNanoseconds(rawDate), isFromMe: sqlite3_column_int(statement, 5) != 0, isGroupChat: sqlite3_column_int(statement, 6) != 0, hasOppositeDirectionReactionAfterMessage: sqlite3_column_int(statement, 7) != 0, likelihood: .review))
+            messages.append(ConversationMessage(chatID: sqlite3_column_int64(statement, 0), chatIdentifier: Self.text(statement, 1) ?? "Unknown conversation", displayName: Self.text(statement, 2), messageID: sqlite3_column_int64(statement, 3), date: Self.dateFromAppleNanoseconds(rawDate), isFromMe: sqlite3_column_int(statement, 5) != 0, isGroupChat: sqlite3_column_int(statement, 6) != 0, participantCount: Int(sqlite3_column_int(statement, 7)), hasOppositeDirectionReactionAfterMessage: sqlite3_column_int(statement, 8) != 0, likelihood: .review))
         }
         return messages
     }

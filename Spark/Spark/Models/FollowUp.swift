@@ -2,7 +2,7 @@ import Foundation
 
 struct ConversationMessage: Identifiable, Equatable {
     let chatID: Int64; let chatIdentifier: String; let displayName: String?; let messageID: Int64
-    let date: Date; let isFromMe: Bool; let isGroupChat: Bool; let hasOppositeDirectionReactionAfterMessage: Bool; let likelihood: FollowUpLikelihood
+    let date: Date; let isFromMe: Bool; let isGroupChat: Bool; let participantCount: Int; let hasOppositeDirectionReactionAfterMessage: Bool; let likelihood: FollowUpLikelihood
     var id: Int64 { messageID }
 }
 
@@ -15,6 +15,11 @@ struct FollowUp: Identifiable, Equatable {
             return displayName
         }
         return conversation.isGroupChat ? "Group Chat" : conversation.chatIdentifier
+    }
+    var groupDescription: String? {
+        guard conversation.isGroupChat else { return nil }
+        guard conversation.participantCount > 0 else { return "Group chat" }
+        return "\(conversation.participantCount) \(conversation.participantCount == 1 ? "person" : "people")"
     }
     var likelihood: FollowUpLikelihood { conversation.likelihood }
     func daysOld(now: Date = .now) -> Int { max(0, Calendar.current.dateComponents([.day], from: conversation.date, to: now).day ?? 0) }
