@@ -23,6 +23,7 @@ struct GroupParticipantAvatar: Identifiable {
     @Published var accentColor: AppAccent { didSet { defaults.set(accentColor.rawValue, forKey: "accentColor") } }
     @Published var onlyContacts: Bool { didSet { defaults.set(onlyContacts, forKey: "onlyContacts"); refresh() } }
     @Published var ignoreGroupChats: Bool { didSet { defaults.set(ignoreGroupChats, forKey: "ignoreGroupChats"); refresh() } }
+    @Published var includeGroupChatsInRespond: Bool { didSet { defaults.set(includeGroupChatsInRespond, forKey: "includeGroupChatsInRespond"); refresh() } }
     @Published var treatReactionsAsReplies: Bool { didSet { defaults.set(treatReactionsAsReplies, forKey: "treatReactionsAsReplies"); refresh() } }
     @Published var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin"); do { try LaunchAtLoginManager.setEnabled(launchAtLogin) } catch { errorMessage = "Could not change Launch at Login: \(error.localizedDescription)" } } }
     private let store: MessageStore; private let notifier: NotificationManager; private let defaults: UserDefaults; private let contactsNameResolver = ContactsNameResolver()
@@ -34,7 +35,7 @@ struct GroupParticipantAvatar: Identifiable {
     init(store: MessageStore = SQLiteMessageStore(), notifier: NotificationManager = NotificationManager(), defaults: UserDefaults = .standard) {
         let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 1)
         let initialMaximumConversationAgeDays = max(initialThresholdDays, defaults.object(forKey: "maximumConversationAgeDays") as? Int ?? 90)
-        self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContacts = defaults.object(forKey: "onlyContacts") as? Bool ?? true; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
+        self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContacts = defaults.object(forKey: "onlyContacts") as? Bool ?? true; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; includeGroupChatsInRespond = defaults.object(forKey: "includeGroupChatsInRespond") as? Bool ?? false; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
         ignoredChatIDs = Set(defaults.array(forKey: "ignoredChatIDs") as? [Int64] ?? [])
         dismissedFollowUpMessageIDs = Set(defaults.array(forKey: "dismissedFollowUpMessageIDs") as? [Int64] ?? [])
         dismissedResponseMessageIDs = Set(defaults.array(forKey: "dismissedResponseMessageIDs") as? [Int64] ?? [])
@@ -58,13 +59,14 @@ struct GroupParticipantAvatar: Identifiable {
         let ignoredChatIDs = ignoredChatIDs
         let dismissedMessageIDs = dismissedFollowUpMessageIDs.union(dismissedResponseMessageIDs)
         let ignoreGroupChats = ignoreGroupChats
+        let includeGroupChatsInRespond = includeGroupChatsInRespond
         let treatReactionsAsReplies = treatReactionsAsReplies
         let onlyContacts = onlyContacts
         isLoading = true
 
         DispatchQueue.global(qos: .userInitiated).async {
             let result = Result {
-                try FollowUpChecker(store: store).findConversationStatuses(thresholdDays: thresholdDays, maximumAgeDays: maximumConversationAgeDays, ignoredChatIDs: ignoredChatIDs, dismissedMessageIDs: dismissedMessageIDs, ignoreGroupChats: ignoreGroupChats, treatReactionsAsReplies: treatReactionsAsReplies)
+                try FollowUpChecker(store: store).findConversationStatuses(thresholdDays: thresholdDays, maximumAgeDays: maximumConversationAgeDays, ignoredChatIDs: ignoredChatIDs, dismissedMessageIDs: dismissedMessageIDs, ignoreGroupChats: ignoreGroupChats, includeGroupChatsInRespond: includeGroupChatsInRespond, treatReactionsAsReplies: treatReactionsAsReplies)
             }
 
             Task { @MainActor [weak self] in

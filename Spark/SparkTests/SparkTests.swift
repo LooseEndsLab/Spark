@@ -20,6 +20,12 @@ struct SparkTests {
     @Test func newerOutgoingIsNotFollowUp() throws { #expect(try results([message(daysAgo: 6)]).isEmpty) }
     @Test func incomingLatestIsNotFollowUp() throws { #expect(try results([message(daysAgo: 20, fromMe: false)]).isEmpty) }
     @Test func oldIncomingMessageIsGhostedConversation() throws { #expect(try ghostedResults([message(daysAgo: 20, fromMe: false)]).count == 1) }
+    @Test func incomingGroupChatsAreExcludedFromRespondByDefault() throws {
+        let group = message(daysAgo: 20, fromMe: false, isGroup: true, participantCount: 3)
+        let checker = FollowUpChecker(store: StubStore([group]))
+        #expect(try checker.findGhostedConversations(thresholdDays: 7, ignoredChatIDs: [], dismissedMessageIDs: [], ignoreGroupChats: false, now: now).isEmpty)
+        #expect(try checker.findGhostedConversations(thresholdDays: 7, ignoredChatIDs: [], dismissedMessageIDs: [], ignoreGroupChats: false, includeGroupChatsInRespond: true, now: now).count == 1)
+    }
     @Test func oldOutgoingMessageIsNotGhostedConversation() throws { #expect(try ghostedResults([message(daysAgo: 20)]).isEmpty) }
     @Test func conversationOlderThanMaximumAgeIsIgnored() throws { #expect(try FollowUpChecker(store: StubStore([message(daysAgo: 91)])).findFollowUps(thresholdDays: 7, maximumAgeDays: 90, ignoredChatIDs: [], dismissedMessageIDs: [], ignoreGroupChats: true, now: now).isEmpty) }
     @Test func dismissedMessageIsNotFollowUp() throws { #expect(try results([message(daysAgo: 20)], dismissed: [10]).isEmpty) }

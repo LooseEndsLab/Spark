@@ -46,7 +46,13 @@ struct SettingsView: View {
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Toggle("Include group chats in Respond", isOn: $model.includeGroupChatsInRespond)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                    .disabled(model.ignoreGroupChats)
                 Text("When enabled, Spark only shows conversations whose identifiers match an entry in your local Contacts database.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Group chats can appear in Follow Up when you sent the latest message. Enable Respond only if you also want incoming group messages to be considered.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -97,12 +103,12 @@ struct SettingsView: View {
             Section("How “Suggested” is calculated") {
                 likelihoodExplanation(
                     title: "1. Find the latest conversation message",
-                    detail: "For each one-to-one chat, Spark finds the latest non-reaction message overall before checking who sent it. A newer normal reply means the chat is not pending."
+                    detail: "For each conversation, Spark finds the latest non-reaction message overall before checking who sent it. A newer normal reply means the chat is not pending."
                 )
 
                 likelihoodExplanation(
                     title: "2. Apply the response rule",
-                    detail: "Your latest message appears in Follow Up; their latest message appears in Respond. When “Treat reactions as replies” is on, a newer reaction from the other person also counts as an acknowledgement."
+                    detail: "Your latest message appears in Follow Up; their latest message appears in Respond. Incoming group chats are excluded from Respond unless you enable them in Spark Settings. When “Treat reactions as replies” is on, a newer reaction from the other person also counts as an acknowledgement."
                 )
 
                 likelihoodExplanation(
