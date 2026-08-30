@@ -64,7 +64,10 @@ enum ConversationVisibility {
                 switch result {
                 case .success(let statuses):
                     let allConversations = statuses.waitingOnThem + statuses.waitingOnYou
-                    let contacts = await contactsNameResolver.contacts(for: allConversations.map(\.conversation.chatIdentifier))
+                    let identifiers = allConversations.flatMap { item in
+                        [item.conversation.chatIdentifier] + item.conversation.participantIdentifiers
+                    }
+                    let contacts = await contactsNameResolver.contacts(for: identifiers)
                     guard self.refreshGeneration == generation else { return }
                     self.contactNames = contacts.names
                     self.contactAvatarData = contacts.avatarData
@@ -119,8 +122,25 @@ enum ConversationVisibility {
             isGroupChat: item.conversation.isGroupChat
         )
     }
-    func name(for item: FollowUp) -> String { contactNames[item.conversation.chatIdentifier] ?? item.name }
-    func avatarData(for item: FollowUp) -> Data? { contactAvatarData[item.conversation.chatIdentifier] }
+    func name(for item: FollowUp) -> String {
+        guard item.conversation.isGroupChat else { return contactNames[item.conversation.chatIdentifier] ?? item.name }
+        if item.name != "Group Chat" { return item.name }
+        return groupParticipantSummary(for: item) ?? item.name
+    }
+    func groupDescription(for item: FollowUp) -> String? {
+        guard item.conversation.isGroupChat else { return nil }
+        guard item.name != "Group Chat", let participants = groupParticipantSummary(for: item) else {
+            return item.groupDescription
+        }
+        return "\(participants) · \(item.groupDescription ?? "Group chat")"
+    }
+    func avatarData(for item: FollowUp) -> Data? {
+        if item.conversation.isGroupChat { return item.conversation.groupPhotoData }
+        return contactAvatarData[item.conversation.chatIdentifier]
+    }
+    private func groupParticipantSummary(for item: FollowUp) -> String? {
+        GroupParticipantFormatter.summary(for: item.conversation.participantIdentifiers, contactNames: contactNames)
+    }
     func unignore(_ id: Int64) { ignoredChatIDs.remove(id); save(ignoredChatIDs, "ignoredChatIDs"); refresh() }
     var ignoredChats: [Int64] { ignoredChatIDs.sorted() }
     var hasDismissedFollowUps: Bool { !dismissedFollowUpMessageIDs.isEmpty }

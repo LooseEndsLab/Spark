@@ -33,10 +33,13 @@ struct FollowUpChecker {
             .filter { !treatReactionsAsReplies || !$0.hasOppositeDirectionReactionAfterMessage }
             // Apply every eligibility check before message bodies are accessed.
             .filter { !ignoredChatIDs.contains($0.chatID) && !dismissedMessageIDs.contains($0.messageID) }
+        let groupMetadata = try store.groupMetadata(for: metadataCandidates.filter(\.isGroupChat).map(\.chatID))
         let candidates = try metadataCandidates
             .map { candidate -> FollowUp in
-                let likelihood = try store.likelihoodForTrailingRun(in: candidate)
-                let classified = ConversationMessage(chatID: candidate.chatID, chatIdentifier: candidate.chatIdentifier, displayName: candidate.displayName, messageID: candidate.messageID, date: candidate.date, isFromMe: candidate.isFromMe, isGroupChat: candidate.isGroupChat, participantCount: candidate.participantCount, hasOppositeDirectionReactionAfterMessage: candidate.hasOppositeDirectionReactionAfterMessage, likelihood: likelihood)
+                let identifyingMetadata = groupMetadata[candidate.chatID]
+                let enriched = ConversationMessage(chatID: candidate.chatID, chatIdentifier: candidate.chatIdentifier, displayName: candidate.displayName, messageID: candidate.messageID, date: candidate.date, isFromMe: candidate.isFromMe, isGroupChat: candidate.isGroupChat, participantCount: candidate.participantCount, participantIdentifiers: identifyingMetadata?.participantIdentifiers ?? candidate.participantIdentifiers, groupPhotoData: identifyingMetadata?.photoData ?? candidate.groupPhotoData, hasOppositeDirectionReactionAfterMessage: candidate.hasOppositeDirectionReactionAfterMessage, likelihood: candidate.likelihood)
+                let likelihood = try store.likelihoodForTrailingRun(in: enriched)
+                let classified = ConversationMessage(chatID: enriched.chatID, chatIdentifier: enriched.chatIdentifier, displayName: enriched.displayName, messageID: enriched.messageID, date: enriched.date, isFromMe: enriched.isFromMe, isGroupChat: enriched.isGroupChat, participantCount: enriched.participantCount, participantIdentifiers: enriched.participantIdentifiers, groupPhotoData: enriched.groupPhotoData, hasOppositeDirectionReactionAfterMessage: enriched.hasOppositeDirectionReactionAfterMessage, likelihood: likelihood)
                 return FollowUp(conversation: classified)
             }
             .sorted { $0.conversation.date < $1.conversation.date }

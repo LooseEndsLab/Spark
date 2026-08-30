@@ -13,7 +13,7 @@ import SQLite3
 struct SparkTests {
 
     private let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
-    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, isGroup: Bool = false, participantCount: Int = 0, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: isGroup, participantCount: participantCount, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
+    private func message(daysAgo: Int, fromMe: Bool = true, chatID: Int64 = 1, messageID: Int64 = 10, text: String? = nil, isGroup: Bool = false, participantCount: Int = 0, participantIdentifiers: [String] = [], groupPhotoData: Data? = nil, hasReactionResponse: Bool = false) -> ConversationMessage { ConversationMessage(chatID: chatID, chatIdentifier: "test", displayName: "Test", messageID: messageID, date: Calendar.current.date(byAdding: .day, value: -daysAgo, to: now)!, isFromMe: fromMe, isGroupChat: isGroup, participantCount: participantCount, participantIdentifiers: participantIdentifiers, groupPhotoData: groupPhotoData, hasOppositeDirectionReactionAfterMessage: hasReactionResponse, likelihood: FollowUpLikelihood.classify(messageText: text)) }
     private func results(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findFollowUps(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     private func ghostedResults(_ messages: [ConversationMessage], threshold: Int = 7, ignored: Set<Int64> = [], dismissed: Set<Int64> = []) throws -> [FollowUp] { try FollowUpChecker(store: StubStore(messages)).findGhostedConversations(thresholdDays: threshold, ignoredChatIDs: ignored, dismissedMessageIDs: dismissed, ignoreGroupChats: true, now: now) }
     @Test func outgoingOlderThanThresholdIsFollowUp() throws { #expect(try results([message(daysAgo: 7)]).count == 1) }
@@ -124,6 +124,32 @@ struct SparkTests {
         #expect(FollowUp(conversation: messages[0]).groupDescription == "4 people")
     }
 
+    @Test func SQLiteStoreLoadsGroupParticipantsAndCurrentPhoto() throws {
+        let fixture = try GroupMetadataFixture()
+        defer { fixture.remove() }
+        let photoData = Data([0x89, 0x50, 0x4e, 0x47])
+        let photoURL = try fixture.addGroupPhotoEvent(date: 10, photoData: photoData)
+        try fixture.addParticipant(rowID: 1, identifier: "+15555550101")
+        try fixture.addParticipant(rowID: 2, identifier: "ben@example.com")
+
+        let store = SQLiteMessageStore(databaseURL: fixture.databaseURL, attachmentsDirectory: fixture.attachmentsDirectory)
+        let metadata = try store.groupMetadata(for: [1])[1]
+
+        #expect(metadata?.participantIdentifiers == ["+15555550101", "ben@example.com"])
+        #expect(metadata?.photoData == photoData)
+        #expect(photoURL.lastPathComponent == "GroupPhotoImage")
+    }
+
+    @Test func SQLiteStoreDoesNotReuseAGroupPhotoOlderThanTheLatestPhotoEvent() throws {
+        let fixture = try GroupMetadataFixture()
+        defer { fixture.remove() }
+        _ = try fixture.addGroupPhotoEvent(date: 10, photoData: Data([0x01]))
+        try fixture.addPhotoEventWithoutAnImage(date: 20)
+
+        let store = SQLiteMessageStore(databaseURL: fixture.databaseURL, attachmentsDirectory: fixture.attachmentsDirectory)
+        #expect(try store.groupMetadata(for: [1])[1]?.photoData == nil)
+    }
+
     @Test func messagesLauncherUsesThePhoneNumberAsTheRecipient() {
         #expect(MessagesLauncher.url(for: "+15555550123")?.absoluteString == "sms:+15555550123")
     }
@@ -148,6 +174,32 @@ struct SparkTests {
     @Test func namedGroupChatsUseTheirMessagesTitle() {
         let conversation = ConversationMessage(chatID: 1, chatIdentifier: "chat90812796164993437", displayName: "Weekend Plans", messageID: 10, date: now, isFromMe: true, isGroupChat: true, participantCount: 4, hasOppositeDirectionReactionAfterMessage: false, likelihood: .review)
         #expect(FollowUp(conversation: conversation).name == "Weekend Plans")
+    }
+
+    @Test func groupParticipantSummaryUsesContactNamesAndCountsUnresolvedMembers() {
+        let names = ["+15555550101": "Alice", "+15555550102": "Ben"]
+        #expect(GroupParticipantFormatter.summary(
+            for: ["+15555550101", "+15555550102"],
+            contactNames: names
+        ) == "Alice & Ben")
+        #expect(GroupParticipantFormatter.summary(
+            for: ["+15555550101", "+15555550102", "+15555550103"],
+            contactNames: names
+        ) == "Alice, Ben +1")
+    }
+
+    @Test func groupMetadataSurvivesLikelihoodClassification() throws {
+        let photo = Data([0x01, 0x02, 0x03])
+        let group = message(daysAgo: 20, isGroup: true, participantCount: 3, participantIdentifiers: ["alice", "ben"], groupPhotoData: photo)
+        let followUps = try FollowUpChecker(store: StubStore([group])).findFollowUps(
+            thresholdDays: 7,
+            ignoredChatIDs: [],
+            dismissedMessageIDs: [],
+            ignoreGroupChats: false,
+            now: now
+        )
+        #expect(followUps.first?.conversation.participantIdentifiers == ["alice", "ben"])
+        #expect(followUps.first?.conversation.groupPhotoData == photo)
     }
 
     @Test func contactNamesMatchEquivalentNorthAmericanPhoneFormats() {
@@ -391,3 +443,62 @@ private func execute(_ sql: String, on database: OpaquePointer) throws {
 }
 
 private enum TestDatabaseError: Error { case couldNotOpen, queryFailed }
+
+private final class GroupMetadataFixture {
+    let rootURL: URL
+    let databaseURL: URL
+    let attachmentsDirectory: URL
+    private var database: OpaquePointer?
+
+    init() throws {
+        rootURL = FileManager.default.temporaryDirectory.appending(path: "SparkGroupMetadataTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        databaseURL = rootURL.appending(path: "chat.db")
+        attachmentsDirectory = rootURL.appending(path: "Attachments", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: attachmentsDirectory, withIntermediateDirectories: true)
+        guard sqlite3_open(databaseURL.path(percentEncoded: false), &database) == SQLITE_OK, let database else {
+            throw TestDatabaseError.couldNotOpen
+        }
+        try execute("CREATE TABLE handle (ROWID INTEGER PRIMARY KEY, id TEXT NOT NULL)", on: database)
+        try execute("CREATE TABLE chat_handle_join (chat_id INTEGER NOT NULL, handle_id INTEGER NOT NULL)", on: database)
+        try execute("CREATE TABLE message (ROWID INTEGER PRIMARY KEY, date INTEGER NOT NULL, item_type INTEGER NOT NULL)", on: database)
+        try execute("CREATE TABLE chat_message_join (chat_id INTEGER NOT NULL, message_id INTEGER NOT NULL)", on: database)
+        try execute("CREATE TABLE attachment (ROWID INTEGER PRIMARY KEY, filename TEXT)", on: database)
+        try execute("CREATE TABLE message_attachment_join (message_id INTEGER NOT NULL, attachment_id INTEGER NOT NULL)", on: database)
+    }
+
+    deinit { sqlite3_close(database) }
+
+    func addParticipant(rowID: Int64, identifier: String) throws {
+        guard let database else { throw TestDatabaseError.couldNotOpen }
+        let escapedIdentifier = identifier.replacingOccurrences(of: "'", with: "''")
+        try execute("INSERT INTO handle (ROWID, id) VALUES (\(rowID), '\(escapedIdentifier)')", on: database)
+        try execute("INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (1, \(rowID))", on: database)
+    }
+
+    func addGroupPhotoEvent(date: Int64, photoData: Data) throws -> URL {
+        guard let database else { throw TestDatabaseError.couldNotOpen }
+        let eventID = date
+        let photoDirectory = attachmentsDirectory.appending(path: "event-\(eventID)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: photoDirectory, withIntermediateDirectories: true)
+        let photoURL = photoDirectory.appending(path: "GroupPhotoImage")
+        try photoData.write(to: photoURL)
+        let escapedPath = photoURL.path.replacingOccurrences(of: "'", with: "''")
+        try execute("INSERT INTO message (ROWID, date, item_type) VALUES (\(eventID), \(date), 3)", on: database)
+        try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(eventID))", on: database)
+        try execute("INSERT INTO attachment (ROWID, filename) VALUES (\(eventID), '\(escapedPath)')", on: database)
+        try execute("INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (\(eventID), \(eventID))", on: database)
+        return photoURL
+    }
+
+    func addPhotoEventWithoutAnImage(date: Int64) throws {
+        guard let database else { throw TestDatabaseError.couldNotOpen }
+        try execute("INSERT INTO message (ROWID, date, item_type) VALUES (\(date), \(date), 3)", on: database)
+        try execute("INSERT INTO chat_message_join (chat_id, message_id) VALUES (1, \(date))", on: database)
+    }
+
+    func remove() {
+        sqlite3_close(database)
+        database = nil
+        try? FileManager.default.removeItem(at: rootURL)
+    }
+}

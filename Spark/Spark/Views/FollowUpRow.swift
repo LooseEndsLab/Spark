@@ -44,25 +44,25 @@ struct FollowUpRow: View {
     }
 
     private var detailText: String {
-        let groupLabel = followUp.groupDescription.map { " · \($0)" } ?? ""
+        let groupLabel = model.groupDescription(for: followUp).map { " · \($0)" } ?? ""
         return "\(followUp.likelihood.label(subject: likelihoodSubject)) · \(followUp.daysOld())d \(statusText)\(groupLabel)"
     }
 
     @ViewBuilder private var contactAvatar: some View {
-        if followUp.conversation.isGroupChat {
+        if let data = model.avatarData(for: followUp), let image = NSImage(data: data) {
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 34, height: 34)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+        } else if followUp.conversation.isGroupChat {
             Image(systemName: "person.3.fill")
                 .font(.system(size: 14, weight: .medium))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.secondary)
                 .frame(width: 34, height: 34)
                 .background(.quaternary, in: Circle())
-                .accessibilityHidden(true)
-        } else if let data = model.avatarData(for: followUp), let image = NSImage(data: data) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 34, height: 34)
-                .clipShape(Circle())
                 .accessibilityHidden(true)
         } else {
             Text(initials)

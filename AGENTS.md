@@ -2,14 +2,15 @@
 
 ## Scope
 
-Spark is a local-only macOS menu-bar app. It identifies one-to-one Messages conversations that may need a follow-up.
+Spark is a local-only macOS menu-bar app. It identifies Messages conversations that may need a follow-up.
 
 ## Privacy and data rules
 
 - Keep all data local. Do not add networking, telemetry, analytics, cloud services, or an LLM/API integration without explicit approval.
 - `~/Library/Messages/chat.db` is read-only. Open it with SQLite read-only mode and keep `PRAGMA query_only = ON`.
-- The only permitted message-body access is the latest uninterrupted run of non-reaction messages from the same sender's `text` or `attributedBody`, read locally and transiently to classify likely follow-ups. Never persist, log, send, or otherwise expose message text. Do not query attachments or handle/contact data from `chat.db`.
-- Contacts access is optional and local. If denied, keep showing raw chat identifiers.
+- The only permitted message-body access is the latest uninterrupted run of non-reaction messages from the same sender's `text` or `attributedBody`, read locally and transiently to classify likely follow-ups. Never persist, log, send, or otherwise expose message text.
+- For group chats that have already passed the metadata filters, participant identifiers and the newest group-photo event may be read locally and transiently to identify the conversation in the UI. Only load an attachment whose basename is exactly `GroupPhotoImage`; do not inspect ordinary message attachments.
+- Contacts access is optional and local. If denied, keep showing raw identifiers for direct chats and aggregate participant counts for group chats.
 - Do not log identifiers, contact data, or message metadata.
 
 ## Follow-up semantics
@@ -23,6 +24,7 @@ Spark is a local-only macOS menu-bar app. It identifies one-to-one Messages conv
 ## Message scanning implementation notes
 
 - Classify the complete trailing non-reaction run from the latest message's sender, but fetch bodies only after metadata filters narrow the candidate conversations. Never expand or decode message bodies for every chat.
+- Fetch participant identifiers and group-photo metadata only for eligible group-chat candidates, after the same metadata filters have narrowed the scan.
 - Keep the metadata head scan fast on real `chat.db`; avoid correlated per-message subqueries or joins that expand every trailing run globally. A blank initial list is not a successful empty scan—show loading or an error until refresh completes.
 - Treat any SQLite `sqlite3_step` result other than `SQLITE_ROW` or `SQLITE_DONE` as a query failure so a Full Disk Access problem is visible.
 - Live diagnosis may use aggregate counts only; never output message text, identifiers, contact data, or message metadata.
