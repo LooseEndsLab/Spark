@@ -7,6 +7,14 @@ enum ConversationVisibility {
     }
 }
 
+struct GroupParticipantAvatar: Identifiable {
+    let identifier: String
+    let name: String
+    let imageData: Data?
+
+    var id: String { identifier }
+}
+
 @MainActor final class AppModel: ObservableObject {
     @Published private(set) var followUps: [FollowUp] = []; @Published private(set) var ghostedConversations: [FollowUp] = []; @Published private(set) var errorMessage: String?; @Published private(set) var isLoading = true
     @Published var thresholdDays: Int { didSet { if maximumConversationAgeDays < thresholdDays { maximumConversationAgeDays = thresholdDays }; defaults.set(max(1, thresholdDays), forKey: "thresholdDays"); refresh() } }
@@ -137,6 +145,14 @@ enum ConversationVisibility {
     func avatarData(for item: FollowUp) -> Data? {
         if item.conversation.isGroupChat { return item.conversation.groupPhotoData }
         return contactAvatarData[item.conversation.chatIdentifier]
+    }
+    func groupParticipantAvatars(for item: FollowUp) -> [GroupParticipantAvatar] {
+        guard item.conversation.isGroupChat else { return [] }
+        var names = Set<String>()
+        return item.conversation.participantIdentifiers.compactMap { identifier in
+            guard let name = contactNames[identifier], names.insert(name).inserted else { return nil }
+            return GroupParticipantAvatar(identifier: identifier, name: name, imageData: contactAvatarData[identifier])
+        }
     }
     private func groupParticipantSummary(for item: FollowUp) -> String? {
         GroupParticipantFormatter.summary(for: item.conversation.participantIdentifiers, contactNames: contactNames)

@@ -177,15 +177,15 @@ struct SparkTests {
     }
 
     @Test func groupParticipantSummaryUsesContactNamesAndCountsUnresolvedMembers() {
-        let names = ["+15555550101": "Alice", "+15555550102": "Ben"]
+        let names = ["+15555550101": "Alice", "+15555550102": "Ben", "+15555550103": "Cara"]
         #expect(GroupParticipantFormatter.summary(
             for: ["+15555550101", "+15555550102"],
             contactNames: names
         ) == "Alice & Ben")
         #expect(GroupParticipantFormatter.summary(
-            for: ["+15555550101", "+15555550102", "+15555550103"],
+            for: ["+15555550101", "+15555550102", "+15555550103", "+15555550104"],
             contactNames: names
-        ) == "Alice, Ben +1")
+        ) == "Alice, Ben, Cara +1")
     }
 
     @Test func groupMetadataSurvivesLikelihoodClassification() throws {

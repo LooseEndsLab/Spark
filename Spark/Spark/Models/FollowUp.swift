@@ -38,11 +38,15 @@ struct ConversationMessage: Identifiable, Equatable {
 }
 
 enum GroupParticipantFormatter {
-    static func summary(for identifiers: [String], contactNames: [String: String], maximumVisibleNames: Int = 2) -> String? {
-        guard maximumVisibleNames > 0 else { return nil }
-        let names = identifiers.compactMap { contactNames[$0] }.reduce(into: [String]()) { result, name in
+    static func names(for identifiers: [String], contactNames: [String: String]) -> [String] {
+        identifiers.compactMap { contactNames[$0] }.reduce(into: [String]()) { result, name in
             if !result.contains(name) { result.append(name) }
         }
+    }
+
+    static func summary(for identifiers: [String], contactNames: [String: String], maximumVisibleNames: Int = 3) -> String? {
+        guard maximumVisibleNames > 0 else { return nil }
+        let names = names(for: identifiers, contactNames: contactNames)
         guard !names.isEmpty else { return nil }
 
         let visibleNames = Array(names.prefix(maximumVisibleNames))
