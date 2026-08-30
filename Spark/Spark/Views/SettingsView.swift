@@ -9,8 +9,42 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Dismissed Conversations") {
+                Text("Resetting restores conversations hidden with Dismiss that still meet the criteria for that list.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Reset Dismissed Follow-ups") {
+                        model.resetDismissedFollowUps()
+                    }
+                    .disabled(!model.hasDismissedFollowUps)
+                    Spacer()
+                    Button("Reset Dismissed Responses") {
+                        model.resetDismissedResponses()
+                    }
+                    .disabled(!model.hasDismissedResponses)
+                }
+            }
+
+            Section("Ignored Conversations") {
+                if model.ignoredChats.isEmpty {
+                    Text("No conversations are currently ignored.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.ignoredChats, id: \.self) { id in
+                        HStack {
+                            Text("Chat \(id)")
+                            Spacer()
+                            Button("Unignore") { model.unignore(id) }
+                        }
+                    }
+                }
+            }
+
             Section {
                 Toggle("Only show contacts", isOn: $model.onlyContacts)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Text("When enabled, Spark only shows conversations whose identifiers match an entry in your local Contacts database.")
                     .font(.caption)
@@ -23,14 +57,6 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 .textCase(nil)
-            }
-
-            Section("Appearance") {
-                Picker("Accent color", selection: $model.accentColor) {
-                    ForEach(AppAccent.allCases) { accent in
-                        Text(accent.title).tag(accent)
-                    }
-                }
             }
 
             Section("Follow-up filtering") {
@@ -54,43 +80,17 @@ struct SettingsView: View {
             Section("App behavior") {
                 Toggle("Notifications", isOn: $model.notificationsEnabled)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
-                Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
-                    .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Treat reactions as replies", isOn: $model.treatReactionsAsReplies)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Launch at Login", isOn: $model.launchAtLogin)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
             }
 
-            Section("Ignored Conversations") {
-                if model.ignoredChats.isEmpty {
-                    Text("No conversations are currently ignored.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.ignoredChats, id: \.self) { id in
-                        HStack {
-                            Text("Chat \(id)")
-                            Spacer()
-                            Button("Unignore") { model.unignore(id) }
-                        }
+            Section("Appearance") {
+                Picker("Accent color", selection: $model.accentColor) {
+                    ForEach(AppAccent.allCases) { accent in
+                        Text(accent.title).tag(accent)
                     }
-                }
-            }
-
-            Section("Dismissed Conversations") {
-                Text("Resetting restores conversations hidden with Dismiss that still meet the criteria for that list.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("Reset Dismissed Follow-ups") {
-                        model.resetDismissedFollowUps()
-                    }
-                    .disabled(!model.hasDismissedFollowUps)
-                    Spacer()
-                    Button("Reset Dismissed Responses") {
-                        model.resetDismissedResponses()
-                    }
-                    .disabled(!model.hasDismissedResponses)
                 }
             }
 
