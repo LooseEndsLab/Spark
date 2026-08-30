@@ -48,3 +48,7 @@ xcodebuild test \
 Use a temporary DerivedData path if an existing local build has stale nested test signatures. Do not clean or alter the user’s active app build merely to run tests.
 
 Before committing, ensure `git diff --check` passes and no Finder/Xcode generated artifacts are staged.
+
+## Local Applications install
+
+When a user asks for a local republish, build a Release archive to a temporary path, verify the staged `Spark.app` with `codesign --verify --deep --strict` and confirm its bundle identifier, then install it at `/Applications/Spark.app`. Before replacing an existing copy, preserve it as a rollback copy until the new app has been verified. Do not relaunch or open the app unless the user asks.

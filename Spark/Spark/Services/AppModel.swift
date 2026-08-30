@@ -11,14 +11,27 @@ import Combine
     @Published var treatReactionsAsReplies: Bool { didSet { defaults.set(treatReactionsAsReplies, forKey: "treatReactionsAsReplies"); refresh() } }
     @Published var launchAtLogin: Bool { didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin"); do { try LaunchAtLoginManager.setEnabled(launchAtLogin) } catch { errorMessage = "Could not change Launch at Login: \(error.localizedDescription)" } } }
     private let store: MessageStore; private let notifier: NotificationManager; private let defaults: UserDefaults; private let contactsNameResolver = ContactsNameResolver()
-    private var ignoredChatIDs: Set<Int64>; private var dismissedMessageIDs: Set<Int64>; private var notifiedMessageIDs: Set<Int64>
+    private let persistenceQueue = DispatchQueue(label: "com.looseends.spark.preferences", qos: .utility)
+    private var ignoredChatIDs: Set<Int64>; private var dismissedFollowUpMessageIDs: Set<Int64>; private var dismissedResponseMessageIDs: Set<Int64>; private var notifiedMessageIDs: Set<Int64>
     private var refreshGeneration = 0
     @Published private(set) var contactNames: [String: String] = [:]
     init(store: MessageStore = SQLiteMessageStore(), notifier: NotificationManager = NotificationManager(), defaults: UserDefaults = .standard) {
         let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 1)
         let initialMaximumConversationAgeDays = max(initialThresholdDays, defaults.object(forKey: "maximumConversationAgeDays") as? Int ?? 90)
         self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContacts = defaults.object(forKey: "onlyContacts") as? Bool ?? true; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
-        ignoredChatIDs = Set(defaults.array(forKey: "ignoredChatIDs") as? [Int64] ?? []); dismissedMessageIDs = Set(defaults.array(forKey: "dismissedMessageIDs") as? [Int64] ?? []); notifiedMessageIDs = Set(defaults.array(forKey: "notifiedMessageIDs") as? [Int64] ?? []); refresh()
+        ignoredChatIDs = Set(defaults.array(forKey: "ignoredChatIDs") as? [Int64] ?? [])
+        dismissedFollowUpMessageIDs = Set(defaults.array(forKey: "dismissedFollowUpMessageIDs") as? [Int64] ?? [])
+        dismissedResponseMessageIDs = Set(defaults.array(forKey: "dismissedResponseMessageIDs") as? [Int64] ?? [])
+        if dismissedFollowUpMessageIDs.isEmpty, dismissedResponseMessageIDs.isEmpty {
+            let legacyDismissedMessageIDs = Set(defaults.array(forKey: "dismissedMessageIDs") as? [Int64] ?? [])
+            dismissedFollowUpMessageIDs = legacyDismissedMessageIDs
+            if !legacyDismissedMessageIDs.isEmpty {
+                defaults.set(Array(dismissedFollowUpMessageIDs), forKey: "dismissedFollowUpMessageIDs")
+                defaults.removeObject(forKey: "dismissedMessageIDs")
+            }
+        }
+        notifiedMessageIDs = Set(defaults.array(forKey: "notifiedMessageIDs") as? [Int64] ?? [])
+        refresh()
     }
     func refresh() {
         refreshGeneration += 1
@@ -27,7 +40,7 @@ import Combine
         let thresholdDays = thresholdDays
         let maximumConversationAgeDays = maximumConversationAgeDays
         let ignoredChatIDs = ignoredChatIDs
-        let dismissedMessageIDs = dismissedMessageIDs
+        let dismissedMessageIDs = dismissedFollowUpMessageIDs.union(dismissedResponseMessageIDs)
         let ignoreGroupChats = ignoreGroupChats
         let treatReactionsAsReplies = treatReactionsAsReplies
         let onlyContacts = onlyContacts
@@ -61,15 +74,28 @@ import Combine
         }
     }
     func dismiss(_ item: FollowUp) {
-        guard dismissedMessageIDs.insert(item.messageID).inserted else { return }
-        save(dismissedMessageIDs, "dismissedMessageIDs")
-        removeFromVisibleConversations(messageID: item.messageID)
+        if item.conversation.isFromMe {
+            guard dismissedFollowUpMessageIDs.insert(item.messageID).inserted else { return }
+            removeFromVisibleConversations(messageID: item.messageID)
+            saveDeferred(dismissedFollowUpMessageIDs, "dismissedFollowUpMessageIDs")
+        } else {
+            guard dismissedResponseMessageIDs.insert(item.messageID).inserted else { return }
+            removeFromVisibleConversations(messageID: item.messageID)
+            saveDeferred(dismissedResponseMessageIDs, "dismissedResponseMessageIDs")
+        }
     }
 
-    func resetDismissedConversations() {
-        guard !dismissedMessageIDs.isEmpty else { return }
-        dismissedMessageIDs.removeAll()
-        save(dismissedMessageIDs, "dismissedMessageIDs")
+    func resetDismissedFollowUps() {
+        guard !dismissedFollowUpMessageIDs.isEmpty else { return }
+        dismissedFollowUpMessageIDs.removeAll()
+        save(dismissedFollowUpMessageIDs, "dismissedFollowUpMessageIDs")
+        refresh()
+    }
+
+    func resetDismissedResponses() {
+        guard !dismissedResponseMessageIDs.isEmpty else { return }
+        dismissedResponseMessageIDs.removeAll()
+        save(dismissedResponseMessageIDs, "dismissedResponseMessageIDs")
         refresh()
     }
 
@@ -82,7 +108,8 @@ import Combine
     func name(for item: FollowUp) -> String { contactNames[item.conversation.chatIdentifier] ?? item.name }
     func unignore(_ id: Int64) { ignoredChatIDs.remove(id); save(ignoredChatIDs, "ignoredChatIDs"); refresh() }
     var ignoredChats: [Int64] { ignoredChatIDs.sorted() }
-    var hasDismissedConversations: Bool { !dismissedMessageIDs.isEmpty }
+    var hasDismissedFollowUps: Bool { !dismissedFollowUpMessageIDs.isEmpty }
+    var hasDismissedResponses: Bool { !dismissedResponseMessageIDs.isEmpty }
     private func removeFromVisibleConversations(messageID: Int64) {
         refreshGeneration += 1 // Prevent an in-flight database scan from restoring the row.
         followUps.removeAll { $0.messageID == messageID }
@@ -95,4 +122,10 @@ import Combine
     }
     private func refreshNotifications() async { guard notificationsEnabled else { return }; for item in followUps where NotificationDeduplicator.shouldNotify(messageID: item.messageID, notifiedMessageIDs: notifiedMessageIDs) { if await notifier.notifyIfPermitted(for: item) { notifiedMessageIDs.insert(item.messageID); save(notifiedMessageIDs, "notifiedMessageIDs") } } }
     private func save(_ values: Set<Int64>, _ key: String) { defaults.set(Array(values), forKey: key) }
+    private func saveDeferred(_ values: Set<Int64>, _ key: String) {
+        let values = Array(values)
+        persistenceQueue.async { [defaults] in
+            defaults.set(values, forKey: key)
+        }
+    }
 }

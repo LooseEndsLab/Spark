@@ -78,13 +78,20 @@ struct SettingsView: View {
             }
 
             Section("Dismissed Conversations") {
-                Text("Resetting restores any conversation hidden with Dismiss that still meets your follow-up criteria.")
+                Text("Resetting restores conversations hidden with Dismiss that still meet the criteria for that list.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Reset Dismissed Conversations") {
-                    model.resetDismissedConversations()
+                HStack {
+                    Button("Reset Dismissed Follow-ups") {
+                        model.resetDismissedFollowUps()
+                    }
+                    .disabled(!model.hasDismissedFollowUps)
+                    Spacer()
+                    Button("Reset Dismissed Responses") {
+                        model.resetDismissedResponses()
+                    }
+                    .disabled(!model.hasDismissedResponses)
                 }
-                .disabled(!model.hasDismissedConversations)
             }
 
             Section("How “Suggested” is calculated") {
