@@ -42,14 +42,16 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Only show contacts", isOn: $model.onlyContacts)
+                Toggle("Only show contacts in Follow Up", isOn: $model.onlyContactsForFollowUps)
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+                Toggle("Only show contacts in Respond", isOn: $model.onlyContactsForResponses)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Ignore group chats", isOn: $model.ignoreGroupChats)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                 Toggle("Include group chats in Respond", isOn: $model.includeGroupChatsInRespond)
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                     .disabled(model.ignoreGroupChats)
-                Text("When enabled, Spark only shows conversations whose identifiers match an entry in your local Contacts database.")
+                Text("When enabled, Spark only shows conversations whose identifiers match an entry in your local Contacts database. Respond defaults to contacts only.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Text("Group chats can appear in Follow Up when you sent the latest message. Enable Respond only if you also want incoming group messages to be considered.")

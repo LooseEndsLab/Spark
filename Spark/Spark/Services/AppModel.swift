@@ -21,7 +21,8 @@ struct GroupParticipantAvatar: Identifiable {
     @Published var maximumConversationAgeDays: Int { didSet { if maximumConversationAgeDays < thresholdDays { maximumConversationAgeDays = thresholdDays; return }; defaults.set(max(1, maximumConversationAgeDays), forKey: "maximumConversationAgeDays"); refresh() } }
     @Published var notificationsEnabled: Bool { didSet { defaults.set(notificationsEnabled, forKey: "notificationsEnabled"); if notificationsEnabled { Task { _ = await notifier.requestAuthorization(); await refreshNotifications() } } } }
     @Published var accentColor: AppAccent { didSet { defaults.set(accentColor.rawValue, forKey: "accentColor") } }
-    @Published var onlyContacts: Bool { didSet { defaults.set(onlyContacts, forKey: "onlyContacts"); refresh() } }
+    @Published var onlyContactsForFollowUps: Bool { didSet { defaults.set(onlyContactsForFollowUps, forKey: "onlyContactsForFollowUps"); refresh() } }
+    @Published var onlyContactsForResponses: Bool { didSet { defaults.set(onlyContactsForResponses, forKey: "onlyContactsForResponses"); refresh() } }
     @Published var ignoreGroupChats: Bool { didSet { defaults.set(ignoreGroupChats, forKey: "ignoreGroupChats"); refresh() } }
     @Published var includeGroupChatsInRespond: Bool { didSet { defaults.set(includeGroupChatsInRespond, forKey: "includeGroupChatsInRespond"); refresh() } }
     @Published var treatReactionsAsReplies: Bool { didSet { defaults.set(treatReactionsAsReplies, forKey: "treatReactionsAsReplies"); refresh() } }
@@ -35,7 +36,12 @@ struct GroupParticipantAvatar: Identifiable {
     init(store: MessageStore = SQLiteMessageStore(), notifier: NotificationManager = NotificationManager(), defaults: UserDefaults = .standard) {
         let initialThresholdDays = max(1, defaults.object(forKey: "thresholdDays") as? Int ?? 1)
         let initialMaximumConversationAgeDays = max(initialThresholdDays, defaults.object(forKey: "maximumConversationAgeDays") as? Int ?? 90)
-        self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContacts = defaults.object(forKey: "onlyContacts") as? Bool ?? true; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; includeGroupChatsInRespond = defaults.object(forKey: "includeGroupChatsInRespond") as? Bool ?? false; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
+        let legacyOnlyContacts = defaults.object(forKey: "onlyContacts") as? Bool
+        let initialOnlyContactsForFollowUps = defaults.object(forKey: "onlyContactsForFollowUps") as? Bool ?? legacyOnlyContacts ?? true
+        let initialOnlyContactsForResponses = defaults.object(forKey: "onlyContactsForResponses") as? Bool ?? true
+        self.store = store; self.notifier = notifier; self.defaults = defaults; thresholdDays = initialThresholdDays; maximumConversationAgeDays = initialMaximumConversationAgeDays; notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? false; accentColor = AppAccent(rawValue: defaults.string(forKey: "accentColor") ?? "") ?? .warmAmber; onlyContactsForFollowUps = initialOnlyContactsForFollowUps; onlyContactsForResponses = initialOnlyContactsForResponses; ignoreGroupChats = defaults.object(forKey: "ignoreGroupChats") as? Bool ?? true; includeGroupChatsInRespond = defaults.object(forKey: "includeGroupChatsInRespond") as? Bool ?? false; treatReactionsAsReplies = defaults.object(forKey: "treatReactionsAsReplies") as? Bool ?? true; launchAtLogin = defaults.object(forKey: "launchAtLogin") as? Bool ?? LaunchAtLoginManager.isEnabled
+        defaults.set(initialOnlyContactsForFollowUps, forKey: "onlyContactsForFollowUps")
+        defaults.set(initialOnlyContactsForResponses, forKey: "onlyContactsForResponses")
         ignoredChatIDs = Set(defaults.array(forKey: "ignoredChatIDs") as? [Int64] ?? [])
         dismissedFollowUpMessageIDs = Set(defaults.array(forKey: "dismissedFollowUpMessageIDs") as? [Int64] ?? [])
         dismissedResponseMessageIDs = Set(defaults.array(forKey: "dismissedResponseMessageIDs") as? [Int64] ?? [])
@@ -61,7 +67,8 @@ struct GroupParticipantAvatar: Identifiable {
         let ignoreGroupChats = ignoreGroupChats
         let includeGroupChatsInRespond = includeGroupChatsInRespond
         let treatReactionsAsReplies = treatReactionsAsReplies
-        let onlyContacts = onlyContacts
+        let onlyContactsForFollowUps = onlyContactsForFollowUps
+        let onlyContactsForResponses = onlyContactsForResponses
         isLoading = true
 
         DispatchQueue.global(qos: .userInitiated).async {
@@ -81,8 +88,8 @@ struct GroupParticipantAvatar: Identifiable {
                     guard self.refreshGeneration == generation else { return }
                     self.contactNames = contacts.names
                     self.contactAvatarData = contacts.avatarData
-                    followUps = statuses.waitingOnThem.filter { ConversationVisibility.includes($0, onlyContacts: onlyContacts, contactNames: contacts.names) }
-                    ghostedConversations = statuses.waitingOnYou.filter { ConversationVisibility.includes($0, onlyContacts: onlyContacts, contactNames: contacts.names) }
+                    followUps = statuses.waitingOnThem.filter { ConversationVisibility.includes($0, onlyContacts: onlyContactsForFollowUps, contactNames: contacts.names) }
+                    ghostedConversations = statuses.waitingOnYou.filter { ConversationVisibility.includes($0, onlyContacts: onlyContactsForResponses, contactNames: contacts.names) }
                     errorMessage = nil
                     isLoading = false
                     await refreshNotifications()
